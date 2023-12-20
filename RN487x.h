@@ -8,6 +8,17 @@
 #define BUFF_TMP_SIZE (1024)
 
 typedef enum {
+	device_information = 0x80, uart_transparent = 0x40, beacon = 0x20, reserved = 0x10
+}RN487x_ServicesMask;
+
+typedef enum {
+	enable_flow_control = 0x8000, no_prompt = 0x4000, fast_mode = 0x2000, no_beacon_scan = 0x1000,
+	no_connect_scan = 0x0800, no_duplicate_scan_result_filter = 0x0400, passive_scan = 0x200,
+	uart_transparent_without_ack = 0x0100, reboot_after_disconnection = 0x0080, running_script_after_power_on = 0x0040,
+	support_rn4020_mldp_streaming_service = 0x0020, data_length_extension_dle = 0x0010, command_mode_guard = 0x0008
+}RN487x_ConfigMask;
+
+typedef enum {
 	connection_established = 0x00, standby_state = 0x01, data_session_open = 0x02, power_on = 0x03
 }RN487x_PinStatus;
 
