@@ -43,7 +43,7 @@ typedef enum{
 }RN487x_IOmask;
 
 typedef enum{
-	RN487x_ok = 0x00, RN487x_hardwareError = 0x01, RN487x_badResponse = 0x02, RN487x_errorResponse = 0x03, RN487x_timeOut = 0x04
+	RN487x_ok = 0x00, RN487x_hardwareError = 0x01, RN487x_badResponse = 0x02, RN487x_errorResponse = 0x03, RN487x_timeOut = 0x04, RN487x_disable_in_client_mode = 0x05
 }RN487x_Error;
 
 
@@ -51,9 +51,10 @@ typedef enum{
 typedef struct{
 	char uuid[UUID_SIZE]; //uuid string
 	uint8_t flag;
-	uint8_t handle;
+	uint16_t handle;
 	uint8_t size;
 	uint8_t *data;
+	uint8_t config;
 }BleutoothCharacteristics;
 void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv);
 
@@ -69,6 +70,8 @@ typedef struct {
 	uint8_t ServerOrClientMode; // 0 = server, 1 = client;
 	char buffTmp[BUFF_TMP_SIZE];
 	uint32_t standardTimeOutMs;
+	uint32_t publicServicesCount;
+	uint32_t privateServicesCount;
 	BleutoothSerivce publicServices[PUBLIC_SERVICE_NUMBER];
 	BleutoothSerivce privateServices[PRIVATE_SERVICE_NUMBER];
 }RN487x;
