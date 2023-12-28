@@ -41,10 +41,10 @@ typedef enum{
 typedef enum{
 	P2_2 = 0x01, P2_4 = 0x02, P3_5 = 0x04, P1_2 = 0x08, P1_3 = 0x10
 }RN487x_IOmask;
-
+/*
 typedef enum{
 	RN487x_ok = 0x00, RN487x_hardwareError = 0x01, RN487x_badResponse = 0x02, RN487x_errorResponse = 0x03, RN487x_timeOut = 0x04, RN487x_disable_in_client_mode = 0x05
-}RN487x_Error;
+}RN487x_Error;*/
 
 
 
@@ -153,7 +153,7 @@ RN487x_Error RN487x_getAdvertiseIntervalB(RN487x *dv, uint16_t *beaconInterval);
 
 
 /// ------------------------------------------ Action command ------------------------------------------------ ///
-
+uint32_t RN487x_isInCommandMode(RN487x *dv);
 RN487x_Error RN487x_commandMode(RN487x *dv);
 RN487x_Error RN487x_quitCommandMode(RN487x *dv);
 RN487x_Error RN487x_enterRemoteMode(RN487x *dv);

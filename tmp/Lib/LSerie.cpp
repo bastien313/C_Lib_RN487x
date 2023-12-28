@@ -107,8 +107,6 @@ bool LSerie::open(string comPort, long speedInBaud, int nbBit, int parity, float
 
 
 
-
-
 /************************************************************************************
 **** Fonction: CloseCom
 **** Derniére mofif: 01/07/2004
