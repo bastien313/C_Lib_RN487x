@@ -1,8 +1,9 @@
 # depslib dependency file v1.0
-1703781998 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\main.cpp
+1703867240 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\main.cpp
 	<iostream>
 	"Lib/RN487xH.h"
 	"Lib/RN487x.h"
+	"Tests/test.h"
 
 1703775889 c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487xh.h
 	"LSerie.h"
@@ -11,18 +12,24 @@
 	<windows.h>
 	<string>
 
-1703781919 c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487x.h
+1703867240 c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487x.h
+	"RN487xH.h"
 
 1703767885 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\lserie.cpp
 	<windows.h>
 	<stdio.h>
 	"LSerie.h"
 
-1703782046 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487xh.cpp
+1703855808 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487xh.cpp
 	"RN487xH.h"
 	<time.h>
 
-1703782254 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487x.cpp
+1703867163 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\lib\rn487x.cpp
 	"RN487xH.h"
 	"RN487x.h"
+
+1703866550 source:c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\tests\test.cpp
+	"../Lib/RN487x.h"
+
+1703866865 c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\tests\test.h
 

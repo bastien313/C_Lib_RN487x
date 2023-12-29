@@ -40,6 +40,8 @@
 		<Unit filename="Lib/RN487x.h" />
 		<Unit filename="Lib/RN487xH.cpp" />
 		<Unit filename="Lib/RN487xH.h" />
+		<Unit filename="Tests/test.cpp" />
+		<Unit filename="Tests/test.h" />
 		<Unit filename="main.cpp" />
 		<Extensions>
 			<lib_finder disable_auto="1" />
