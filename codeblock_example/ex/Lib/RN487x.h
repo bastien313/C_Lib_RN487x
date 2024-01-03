@@ -9,6 +9,12 @@
 #define PUBLIC_SERVICE_NUMBER (4)
 #define BUFF_TMP_SIZE (1024)
 
+
+typedef enum {
+	btc_indicate = 0b00100000, btc_notify = 0b00010000, btc_write = 0b00001000,
+	btc_write_without_response = 0b00000100, btc_read = 0b00000010
+}RN487x_CaracteristicsFlag;
+
 typedef enum {
 	device_information = 0x80, uart_transparent = 0x40, beacon = 0x20, reserved = 0x10
 }RN487x_ServicesMask;
@@ -48,14 +54,22 @@ typedef enum{
 	RN487x_ok = 0x00, RN487x_hardwareError = 0x01, RN487x_badResponse = 0x02, RN487x_errorResponse = 0x03, RN487x_timeOut = 0x04, RN487x_disable_in_client_mode = 0x05
 }RN487x_Error;*/
 
-
+typedef struct{
+	uint8_t *address[16];
+	uint8_t addrType;
+	char name[256]
+	uint8_t rssi;
+	//uint8_t *data;
+	uint8_t config;
+}BleutoothScanDevice;
+void BleutoothScanDevice_clear(BleutoothScanDevice *sd);
 
 typedef struct{
 	char uuid[UUID_SIZE]; //uuid string
 	uint8_t flag;
 	uint16_t handle;
 	uint8_t size;
-	uint8_t *data;
+	//uint8_t *data;
 	uint8_t config;
 }BleutoothCharacteristics;
 void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv);
@@ -169,8 +183,8 @@ RN487x_Error RN487x_connectLastBondedDevice(RN487x *dv);
 RN487x_Error RN487x_connectBondedDevice(RN487x *dv, uint8_t bondId);
 RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress); // public = 0, private = 1
 RN487x_Error RN487x_startUartTransparentMode(RN487x *dv); // public = 0, private = 1
-RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv); // public = 0, private = 1
-RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t flag, uint8_t *data, uint32_t size); // public = 0, private = 1
+RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv, uint8_t permanent, char charSource);
+RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t adType, uint8_t *data, uint32_t size, uint8_t permanent, char charSource);
 RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress);
 RN487x_Error RN487x_whiteListBondedDevice(RN487x *dv);
 RN487x_Error RN487x_clearWhiteListBondedDevice(RN487x *dv);
@@ -190,8 +204,16 @@ RN487x_Error RN487x_startClientOperation(RN487x *dv);
 /// ------------------------------------------ Services command ------------------------------------------------- ///
 
 RN487x_Error RN487x_createServerServices(RN487x *dv, BleutoothSerivce *service);
-RN487x_Error RN487x_writeCaracteristic(BleutoothCharacteristics *caracteristic);
-RN487x_Error RN487x_readCaracteristic(BleutoothCharacteristics *caracteristic);
+RN487x_Error RN487x_writeCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t dataLen);
+RN487x_Error RN487x_readCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t readLen);
+
+BleutoothSerivce *RN487x_getServicesStructureByUuid(RN487x *dv, const char *uuidSearch);
+BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSerivce *sv, const char *uuidSearch, uint8_t flag);
+
+
+/// Scannig
+RN487x_Error RN487x_startScan(RN487x *dv);
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv);
 
 
 

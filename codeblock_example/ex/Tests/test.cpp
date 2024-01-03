@@ -1,7 +1,185 @@
 #include "../Lib/RN487x.h"
 
 
+int readWriteServices(RN487x *dv, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+
+    RN487x_commandMode(dv);
+    *err = (int)RN487x_isInCommandMode(dv);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+
+
+    /*Service must exist.
+        BleutoothSerivce_clear(&service);
+    strcpy(service.uuid, "0102030405060708090A0B0C0D0E0F0F");
+    strcpy(service.characteristic[0].uuid, "0101010101010101010101010101010F");
+    service.characteristic[0].size = 10;
+    service.characteristic[0].flag = btc_read | btc_notify;
+    strcpy(service.characteristic[1].uuid, "0A0B0C0101010101010101010101010F");
+    service.characteristic[1].size = 2;
+    service.characteristic[1].flag = btc_write;
+    */
+
+    BleutoothCharacteristics *writeChar;
+    BleutoothCharacteristics *readChar;
+
+    writeChar = RN487x_getCharacteristcsStructureByUuid(RN487x_getServicesStructureByUuid(dv,"0102030405060708090A0B0C0D0E0F0F"),
+                                                        "0A0B0C0101010101010101010101010F", btc_write);
+
+    readChar = RN487x_getCharacteristcsStructureByUuid(RN487x_getServicesStructureByUuid(dv,"0102030405060708090A0B0C0D0E0F0F"),
+                                                        "0101010101010101010101010101010F", btc_read);
+
+    if(!writeChar){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    if(!readChar){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    uint8_t dataRead [100];
+    uint8_t dataWrite [100];
+    dataWrite[0] = '0';
+    dataWrite[1] = 'A';
+    dataWrite[2] = 'C';
+    dataWrite[3] = 'C';
+    while(1){
+
+        rnErr = RN487x_readCaracteristic(dv, writeChar, dataRead, 2);
+        if(rnErr != RN487x_ok){
+            *err = (int)rnErr;
+            return testId;
+        }
+        dataRead[2] = 0;
+        printf("Read = %s\n", (char*)dataRead);
+
+        rnErr = RN487x_writeCaracteristic(dv, readChar, dataWrite, 10);
+        if(rnErr != RN487x_ok){
+            *err = (int)rnErr;
+            return testId;
+        }
+        dataWrite[0]++;
+        if(dataWrite[0] > '9'){
+            dataWrite[0] = '0';
+        }
+        Sleep(500);
+    }
+
+    *err = (int)rnErr;
+    testId++;
+    return testId;
+}
+
+int servicesTest(RN487x *dv, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+    RN487x_commandMode(dv);
+    *err = (int)RN487x_isInCommandMode(dv);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+    BleutoothSerivce service;
+
+    BleutoothSerivce_clear(&service);
+    strcpy(service.uuid, "0102030405060708090A0B0C0D0E0F0F");
+    strcpy(service.characteristic[0].uuid, "0101010101010101010101010101010F");
+    service.characteristic[0].size = 10;
+    service.characteristic[0].flag = btc_read | btc_notify;
+    strcpy(service.characteristic[1].uuid, "0A0B0C0101010101010101010101010F");
+    service.characteristic[1].size = 2;
+    service.characteristic[1].flag = btc_write;
+
+    rnErr = RN487x_createServerServices(dv, &service);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    BleutoothSerivce_clear(&service);
+    strcpy(service.uuid, "1802");
+    strcpy(service.characteristic[0].uuid, "0C0C");
+    service.characteristic[0].size = 10;
+    service.characteristic[0].flag = btc_read | btc_notify;
+    strcpy(service.characteristic[1].uuid, "0D0D");
+    service.characteristic[1].size = 2;
+    service.characteristic[1].flag = btc_write;
+
+    rnErr = RN487x_createServerServices(dv, &service);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    rnErr = RN487x_listServices(dv);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    *err = (int)rnErr;
+    testId++;
+    return testId;
+
+}
+
 int advertiseTest(RN487x *dv, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+    RN487x_commandMode(dv);
+    *err = (int)RN487x_isInCommandMode(dv);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+
+    rnErr = RN487x_clearAdvertiseContent(dv,1,'A');
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+
+    rnErr = RN487x_clearAdvertiseContent(dv,0,'A');
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    uint8_t advContent[5] = {0x18,0x99,0xAA,0x45,0x78};
+
+    rnErr = RN487x_appendAdvertiseContent(dv,0xFF, advContent, 5, 0,'A');
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    uint8_t advContent2[2] = {0xFB,0xCA};
+
+    rnErr = RN487x_appendAdvertiseContent(dv,0xFF, advContent2, 2, 1,'A');
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    *err = (int)rnErr;
+    testId++;
+    return testId;
+
+
+
 }
 
 int deviceResetConfiguration(RN487x *dv, int *err){

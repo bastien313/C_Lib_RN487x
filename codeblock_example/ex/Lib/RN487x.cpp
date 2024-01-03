@@ -4,6 +4,19 @@
 
 
 
+/*
+Verify if uuid is valid, uuid is unvalud  if uuid containt only '0' or 0.
+return 1 f
+*/
+int uuidIsValid(char *uuid){
+    for(unsigned int i = 0; i<UUID_SIZE; i++){
+        if(uuid[i] != 0 && uuid[i] != '0'){
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv){
 	for(unsigned int i = 0; i < UUID_SIZE; i++){
 		dv->uuid[i] = 0;
@@ -11,7 +24,7 @@ void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv){
 	dv->flag = 0;
 	dv->handle = 0;
 	dv->size = 0;
-	dv->data = NULL;
+	//dv->data = NULL;
 	dv->config = 0;
 }
 
@@ -1199,11 +1212,11 @@ uted by one or more AD structures which includes the one byte of length, one byt
 AD type and AD data must be less than or equal to 31 bytes.
 charSource = A for advertise, B for beacon, S for scan.
 */
-RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t flag, uint8_t *data, uint32_t size, uint8_t permanent, char charSource){
+RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t adType, uint8_t *data, uint32_t size, uint8_t permanent, char charSource){
 	char locBuffTmp[10];
 	RN487x_Error err;
 
-	sprintf(dv->buffTmp,"%c%c,%02x,", (permanent)? 'N': 'I', charSource, flag);
+	sprintf(dv->buffTmp,"%c%c,%02x,", (permanent)? 'N': 'I', charSource, adType);
 	for(unsigned int i = 0; i< size; i++)
 	{
 		sprintf(locBuffTmp,"%02x", *data);
@@ -1422,10 +1435,14 @@ RN487x_Error RN487x_listServices(RN487x *dv){
 	}
 	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "END\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok){
-        RN487x_skipPromptLine(dv);
+        //RN487x_skipPromptLine(dv);
 		return err;
 	}
-	char *line = strtok(dv->buffTmp, "\r");
+
+	char *strtokLineLast;
+	char *strtokFieldLast;
+
+	char *line = strtok_r(dv->buffTmp, "\r\n", &strtokLineLast);
 	dv->publicServicesCount = 0;
 	dv->privateServicesCount = 0;
 	uint32_t caracteristcId = 0;
@@ -1436,56 +1453,38 @@ RN487x_Error RN487x_listServices(RN487x *dv){
 			// caracteristic
 			uint32_t intval;
 
-			char *valueStr = strtok(&line[2], ",");
-			if (valueStr){
-				// uuid
-				if(servPtr){
-                    strcpy(servPtr->characteristic[caracteristcId].uuid, line);
-				}else{
-				    RN487x_skipPromptLine(dv);
-				    return RN487x_memoryAdressError;
-				}
+            char *field = strtok_r(&line[2], ",", &strtokFieldLast);
 
-			}
+            if(field){
+                strcpy(servPtr->characteristic[caracteristcId].uuid, field);
+            }else{
+                return RN487x_memoryAdressError;
+            }
 
-			valueStr = strtok(NULL, ",");
-			if (valueStr){
-				//handle
-				sscanf(valueStr,"%u",&intval);
-				if(servPtr){
-				    servPtr->characteristic[caracteristcId].handle = intval;
-				}else{
-				    RN487x_skipPromptLine(dv);
-				    return RN487x_memoryAdressError;
-				}
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //handle
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].handle = intval;
+            }else{
+                return RN487x_memoryAdressError;
+            }
 
-			}
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //flag
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].flag = (uint8_t)intval;
+            }else{
+                return RN487x_memoryAdressError;
+            }
 
-			valueStr = strtok(NULL, ",");
-			if (valueStr){
-				//flag
-				sscanf(valueStr,"%u",&intval);
-				if(servPtr){
-                   servPtr->characteristic[caracteristcId].flag = (uint8_t)intval;
-				}else{
-				    RN487x_skipPromptLine(dv);
-				    return RN487x_memoryAdressError;
-				}
-
-			}
-
-			valueStr = strtok(NULL, ",");
-			if (valueStr){
-				//handle
-				sscanf(valueStr,"%u",&intval);
-				if(servPtr){
-				   servPtr->characteristic[caracteristcId].config = (uint8_t)intval;
-				}else{
-				    RN487x_skipPromptLine(dv);
-				    return RN487x_memoryAdressError;
-				}
-
-			}
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //flag
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].config  = (uint8_t)intval;
+            }
 			caracteristcId++;
 		}else{
 			caracteristcId = 0;
@@ -1501,8 +1500,9 @@ RN487x_Error RN487x_listServices(RN487x *dv){
 				strcpy(servPtr->uuid, line);
 			}
 		}
+		line = strtok_r(NULL, "\r\n", &strtokLineLast);
 	}
-    RN487x_skipPromptLine(dv);
+    //RN487x_skipPromptLine(dv);
 	return RN487x_ok;
 
 }
@@ -1543,29 +1543,30 @@ RN487x_Error RN487x_createServerServices(RN487x *dv, BleutoothSerivce *service){
 		return RN487x_disable_in_client_mode;
 	}
 
-	sprintf(dv->buffTmp,"PS,%s",service->uuid);
+	sprintf(dv->buffTmp,"PS,%s\r",service->uuid);
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
-	err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	err = RN487x_lineReplyChecker(dv,"AOK", "Err", 1000);
+	RN487x_skipPromptLine(dv);
 	if(err != RN487x_ok){
-        RN487x_skipPromptLine(dv);
 		return err;
 	}
 	for(unsigned int i=0; i<SERVICE_CHARACTERISTICS_NUMBER; i++){
-		if(service->characteristic[i].uuid){
+		if(uuidIsValid(service->characteristic[i].uuid)){
 			// uuid is not 0 => exist, we add it.
-			sprintf(dv->buffTmp,"PC,%s,%02x,%02x",service->characteristic[i].uuid,
+			sprintf(dv->buffTmp,"PC,%s,%02x,%02x\r",service->characteristic[i].uuid,
 												  service->characteristic[i].flag,
 												  service->characteristic[i].size);
-			err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+            RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+			err = RN487x_lineReplyChecker(dv,"AOK", "Err", 1000);
 			RN487x_skipPromptLine(dv);
 			if(err != RN487x_ok){
-			    RN487x_skipPromptLine(dv);
+			    //RN487x_skipPromptLine(dv);
 				return err;
 			}
 		}
 	}
-	RN487x_skipPromptLine(dv);
+	//RN487x_skipPromptLine(dv);
 	return RN487x_ok;
 }
 
@@ -1574,7 +1575,7 @@ RN487x_Error RN487x_writeCaracteristic(RN487x *dv, BleutoothCharacteristics *car
     RN487x_Error err;
 	char valTmp[10];
 	char carClienServer = (dv->serverOrClientMode)?'C':'S';
-	sprintf(dv->buffTmp,"%cHW,%s",carClienServer, caracteristic->uuid);
+	sprintf(dv->buffTmp,"%cHW,%04x,",carClienServer, caracteristic->handle);
 	for(unsigned int i=0; i<dataLen; i++){
 		sprintf(valTmp,"%02x",data[i]);
 		strcat(dv->buffTmp,valTmp);
@@ -1590,13 +1591,49 @@ RN487x_Error RN487x_writeCaracteristic(RN487x *dv, BleutoothCharacteristics *car
 RN487x_Error RN487x_readCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t readLen){
     RN487x_Error err;
 	char carClienServer = (dv->serverOrClientMode)?'C':'S';
-	sprintf(dv->buffTmp,"%cHR,%s\r",carClienServer, caracteristic->uuid);
+	sprintf(dv->buffTmp,"%cHR,%04x\r",carClienServer, caracteristic->handle);
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,(char*)data, "\r", dv->standardTimeOutMs);
-	RN487x_skipPromptLine(dv);
-	if(err != RN487x_ok){
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r", dv->standardTimeOutMs);
+    if(err != RN487x_ok){
+        RN487x_skipPromptLine(dv);
 		return err;
 	}
+
+	if(strlen(dv->buffTmp) < readLen*2){
+        readLen = strlen(dv->buffTmp)/2;
+	}
+	uint32_t buffId = 0;
+	for(unsigned int i=0; i< readLen; i++){
+        uint8_t datHi = ((dv->buffTmp[buffId]>= '0' &&  dv->buffTmp[buffId]<='9')? dv->buffTmp[buffId] - '0' : dv->buffTmp[buffId] - 55) & 0x0F;
+        buffId++;
+        uint8_t datLo = ((dv->buffTmp[buffId]>= '0' &&  dv->buffTmp[buffId]<='9')? dv->buffTmp[buffId] - '0' : dv->buffTmp[buffId] - 55) & 0x0F;
+        data[i] =   (datHi << 4) + datLo;
+        buffId++;
+	}
+
+	RN487x_skipPromptLine(dv);
 	return RN487x_ok;
+}
+
+BleutoothSerivce *RN487x_getServicesStructureByUuid(RN487x *dv, const char *uuidSearch){
+    for(unsigned int i = 0; i<PRIVATE_SERVICE_NUMBER; i++){
+        if(!strcmp(dv->privateServices[i].uuid, uuidSearch))
+            return &dv->privateServices[i];
+	}
+	for(unsigned int i = 0; i<PUBLIC_SERVICE_NUMBER; i++){
+        if(!strcmp(dv->publicServices[i].uuid, uuidSearch))
+            return &dv->privateServices[i];
+	}
+	return NULL;
+}
+
+BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSerivce *sv, const char *uuidSearch, uint8_t flag){
+    if(sv){
+        for(unsigned int i = 0; i<SERVICE_CHARACTERISTICS_NUMBER; i++){
+            if(!strcmp(sv->characteristic[i].uuid, uuidSearch) && sv->characteristic[i].flag == flag)
+                return &sv->characteristic[i];
+        }
+    }
+	return NULL;
 }
