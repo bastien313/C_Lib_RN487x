@@ -8,6 +8,7 @@
 #define PRIVATE_SERVICE_NUMBER (8)
 #define PUBLIC_SERVICE_NUMBER (4)
 #define BUFF_TMP_SIZE (1024)
+#define DEV_NAME_SIZE (256)
 
 
 typedef enum {
@@ -55,11 +56,10 @@ typedef enum{
 }RN487x_Error;*/
 
 typedef struct{
-	char *address[33];
+	char address[UUID_SIZE];
 	uint8_t addrType;
 	char name[256]
 	int8_t rssi;
-	//uint8_t *data;
 	uint8_t connectable;
 }BleutoothScanDevice;
 void BleutoothScanDevice_clear(BleutoothScanDevice *sd);

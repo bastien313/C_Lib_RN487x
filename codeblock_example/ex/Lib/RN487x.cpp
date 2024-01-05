@@ -2,7 +2,13 @@
 #include "RN487x.h"
 
 
-
+void BleutoothScanDevice_clear(BleutoothScanDevice *sd){
+    memset(sd->address, 0, UUID_SIZE);
+    sd->addrType = 0;
+    memset(sd->name, 0, DEV_NAME_SIZE);
+    sd->rssi = 0;
+    sd->connectable = 0;
+}
 
 /*
 Verify if uuid is valid, uuid is unvalud  if uuid containt only '0' or 0.
@@ -1638,8 +1644,44 @@ BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSeriv
 	return NULL;
 }
 
-
+/* F[,<hex16>,<hex16>]
+Command F, when invoked, automatically switches the device into Central GAP role
+and start BLE scanning.
+If no parameter is provided, command F starts the process of scanning with default
+scan interval of 375 milliseconds and scan window of 250 milliseconds. The user has
+the option to specify the scan interval and scan window as first and second parameter,
+respectively. The inputs are in 16-bit hex format. Each unit is 0.625 millisecond. Scan
+interval must be larger than or equal to scan window. The scan interval and the scan
+window values can range from 2.5 milliseconds to 10.24 seconds. Use X command to
+stop an active scan.
+Default: 375 ms for scan interval, 250 ms for scan window
+*/
 RN487x_Error RN487x_startScan(RN487x *dv){
-z}
-RN487x_Error RN487x_scanGetNextEntry(RN487x *dv);
-RN487x_Error RN487x_stopScan(RN487x *dv);
+    RN487x_Error err;
+	RN487xH_uartClear(dv->hardwareInterface);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "F\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "Scanning\r\n", 1000);
+    if(err != RN487x_ok){
+        RN487x_stopScan(dv);
+		return err;
+	}
+    return err;
+}
+
+
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *dv, char *uuidsBuff, char *advertiseBuff, uint32_t timeOutMs){
+
+}
+
+/* X
+Command X stops scan process started by command F. Command X does not expect
+any parameter.
+*/
+RN487x_Error RN487x_stopScan(RN487x *dv){
+    RN487x_Error err;
+	RN487xH_uartClear(dv->hardwareInterface);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "X\r");
+    err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+    return err;
+}
