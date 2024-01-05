@@ -1637,3 +1637,9 @@ BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSeriv
     }
 	return NULL;
 }
+
+
+RN487x_Error RN487x_startScan(RN487x *dv){
+z}
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv);
+RN487x_Error RN487x_stopScan(RN487x *dv);

@@ -55,12 +55,12 @@ typedef enum{
 }RN487x_Error;*/
 
 typedef struct{
-	uint8_t *address[16];
+	char *address[33];
 	uint8_t addrType;
 	char name[256]
-	uint8_t rssi;
+	int8_t rssi;
 	//uint8_t *data;
-	uint8_t config;
+	uint8_t connectable;
 }BleutoothScanDevice;
 void BleutoothScanDevice_clear(BleutoothScanDevice *sd);
 
@@ -214,7 +214,7 @@ BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSeriv
 /// Scannig
 RN487x_Error RN487x_startScan(RN487x *dv);
 RN487x_Error RN487x_scanGetNextEntry(RN487x *dv);
-
+RN487x_Error RN487x_stopScan(RN487x *dv);
 
 
 #endif
