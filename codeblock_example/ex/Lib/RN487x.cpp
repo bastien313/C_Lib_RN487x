@@ -1670,7 +1670,11 @@ RN487x_Error RN487x_startScan(RN487x *dv){
 
 
 RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *dv, char *uuidsBuff, char *advertiseBuff, uint32_t timeOutMs){
-
+    RN487x_Error err;
+    err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r\n", timeOutMs);
+    if(err != RN487x_ok){
+		return err;
+	}
 }
 
 /* X
