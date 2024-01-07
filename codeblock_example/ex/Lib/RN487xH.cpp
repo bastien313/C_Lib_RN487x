@@ -19,8 +19,8 @@ void printDebug(const char *base, const char *bufferAdd, unsigned int len){
         strcat(strDebug,strTmp);
     }
     //strcat(strDebug,"|");
-    strcat(strDebug,"\n");
-    printf(strDebug);
+    //strcat(strDebug,"\n");
+    puts(strDebug);
 }
 
 RN487x_Error RN487xH_init(RN487x_hardwareInterface *dv, const char * comName){
@@ -79,13 +79,12 @@ RN487x_Error RN487xH_uartReadUntilTimeOut(RN487x_hardwareInterface *dv, char *da
 
     while( (((double)clock() - initialTime)/(CLOCKS_PER_SEC/1000)) < (double) timeoutMs){
         int result = RN487xH_uartReadChar(dv, &data[*len]);
-        if(result < 0){
+        if(result == RN487x_ok){
+            (*len)++;
+        }else if(result == RN487x_hardwareError){
             sprintf(strDeb, "@<RX>Err(%d):",result);
             printDebug(strDeb, data, *len);
             return RN487x_hardwareError;
-        }
-        if(result > 0){
-            (*len)++;
         }
     }
     sprintf(strDeb, "@<RX>(%d):",*len);
@@ -100,7 +99,7 @@ Remove = put 0(end line) at the postion on detection string.
 */
 RN487x_Error RN487xH_uartReadUntilStringDetected(RN487x_hardwareInterface *dv, char *data, const char*detection, uint32_t timeoutMs){
     double initialTime = (double)clock();
-    char strDeb[256];
+    char strDeb[1024];
     unsigned int len = 0;
     data[len] = 0; // make valid string
 

@@ -58,7 +58,7 @@ typedef enum{
 typedef struct{
 	char address[UUID_SIZE];
 	uint8_t addrType;
-	char name[256]
+	char name[256];
 	int8_t rssi;
 	uint8_t connectable;
 }BleutoothScanDevice;
@@ -181,13 +181,12 @@ RN487x_Error RN487x_startAdvertise(RN487x *dv, uint16_t fastInterval, uint8_t sl
 RN487x_Error RN487x_bondDevice(RN487x *dv);
 RN487x_Error RN487x_connectLastBondedDevice(RN487x *dv);
 RN487x_Error RN487x_connectBondedDevice(RN487x *dv, uint8_t bondId);
-RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress); // public = 0, private = 1
+RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, const char *adress); // public = 0, private = 1
 RN487x_Error RN487x_startUartTransparentMode(RN487x *dv); // public = 0, private = 1
 RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv, uint8_t permanent, char charSource);
 RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t adType, uint8_t *data, uint32_t size, uint8_t permanent, char charSource);
-RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress);
+RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, const char *adress);
 RN487x_Error RN487x_whiteListBondedDevice(RN487x *dv);
-RN487x_Error RN487x_clearWhiteListBondedDevice(RN487x *dv);
 RN487x_Error RN487x_readWhiteList(RN487x *dv, char *data);
 RN487x_Error RN487x_disconnect(RN487x *dv);
 RN487x_Error RN487x_getSignalStreng(RN487x *dv, float *streng);
@@ -213,7 +212,7 @@ BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSeriv
 
 /// Scannig
 RN487x_Error RN487x_startScan(RN487x *dv);
-RN487x_Error RN487x_scanGetNextEntry(RN487x *dv);
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *sdv, char *uuidsBuff, char *broadcastPayload, uint32_t timeOutMs);
 RN487x_Error RN487x_stopScan(RN487x *dv);
 
 

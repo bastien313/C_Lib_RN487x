@@ -772,7 +772,7 @@ RN487x_Error RN487x_getOuputPowerAdvertise(RN487x *dv, RN487x_OutputPower *power
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "GGA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r\n", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
 	    RN487x_skipPromptLine(dv);
@@ -794,7 +794,7 @@ RN487x_Error RN487x_getOuputPowerConnected(RN487x *dv, RN487x_OutputPower *power
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "GGC\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r\n", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
 	    RN487x_skipPromptLine(dv);
@@ -1096,12 +1096,18 @@ However, this command is only for securing link rather than saving connection
 information.
 */
 RN487x_Error RN487x_bondDevice(RN487x *dv){
-    RN487x_Error err;
+    RN487x_Error errBond;
+    char* errAok;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "B\r");
-	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
-	RN487x_skipPromptLine(dv);
-	return err;
+	errBond = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "%SECURED%%BONDED%", 1000);
+	errAok = strstr(dv->buffTmp, "AOK");
+	if(errBond == RN487x_ok || errAok){
+        RN487x_skipPromptLine(dv);
+        return RN487x_ok;
+	}
+
+	return errBond;
 }
 /* C
 This command makes RN4870/71 try to connect to the last bonded device. When this
@@ -1173,11 +1179,20 @@ public = 0, private = 1
 */
 RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, const char *adress){
     RN487x_Error err;
+    char validReply[100];
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"C,%x,%.12s\r",publicOrPrivate, adress);
 	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
 	uint32_t readLen = 0;
 
+	// wait  valid connection reply
+	sprintf(validReply, "%cCONNECT,%x,%.12s",'%', publicOrPrivate, adress);
+    err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, validReply, 1000);
+    if(err != RN487x_ok){
+		return err;
+	}
+
+    // wait optionaly flag, secured, bonded or discoonected
 	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp, &readLen, 1000);
 	dv->buffTmp[readLen] = 0; // Make a valid string.
 	if(err != RN487x_ok){
@@ -1189,10 +1204,8 @@ RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, const c
 	if(strstr(dv->buffTmp, "%DISCONNECT%")){
 		return RN487x_errorResponse;
 	}
-	if(strstr(dv->buffTmp, "%CONNECT%")){
-		return RN487x_ok;
-	}
-	return RN487x_badResponse;
+
+	return RN487x_ok;
 }
 
 /* I
@@ -1314,7 +1327,7 @@ RN487x_Error RN487x_readWhiteList(RN487x *dv, char *data){
     RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "JD\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, data, "END\r", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, data, "END\r\n", dv->standardTimeOutMs);
 	RN487x_skipPromptLine(dv);
 	return err;
 }
@@ -1327,7 +1340,7 @@ RN487x_Error RN487x_disconnect(RN487x *dv){
     RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "K,1\r");
-	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "%DISCONNECT%", dv->standardTimeOutMs);
 	RN487x_skipPromptLine(dv);
 	return err;
 }
@@ -1408,7 +1421,7 @@ RN487x_Error RN487x_listBondedDevice(RN487x *dv, char *device){
     RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	RN487xH_uartWriteStr(dv->hardwareInterface, "LB\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,device, "END\r", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,device, "END\r\n", dv->standardTimeOutMs);
 	RN487x_skipPromptLine(dv);
 	if(err != RN487x_ok){
 		return err;
@@ -1668,13 +1681,101 @@ RN487x_Error RN487x_startScan(RN487x *dv){
     return err;
 }
 
-
-RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *dv, char *uuidsBuff, char *advertiseBuff, uint32_t timeOutMs){
+//#include <time.h>
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *sdv, char *uuidsBuff, char *broadcastPayload, uint32_t timeOutMs){
     RN487x_Error err;
     err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r\n", timeOutMs);
     if(err != RN487x_ok){
 		return err;
 	}
+
+	BleutoothScanDevice_clear(sdv);
+	unsigned int lineLen = strlen(dv->buffTmp);
+	if( (lineLen == 0 ) || dv->buffTmp[0] != '%' || dv->buffTmp[lineLen-1] != '%'){
+        // Line is unvalid
+        return RN487x_badResponse;
+	}
+	dv->buffTmp[lineLen-1] = 0; // clear last %
+
+	unsigned int maxField = 4;
+	char * field[5] = {NULL, NULL, NULL, NULL, NULL};
+	unsigned int sizeField[5] = {0, 0, 0, 0, 0};
+	unsigned int idfield = 0;
+    if (!strstr(dv->buffTmp, "Brcst:")){
+        sdv->connectable = 1;
+        maxField = 5;
+	}
+
+	//Get field ptr and size.
+	field[0] = dv->buffTmp + 1;
+	for(unsigned int i=1; i< lineLen; i++){
+        if(dv->buffTmp[i] == ',' || dv->buffTmp[i] ==  0){
+            // next field detection
+            //sizeField[idfield] = (dv->buffTmp + i) - field[idfield];
+            idfield++;
+
+            if(dv->buffTmp[i] == 0){
+                //Last field.
+                break;
+            }else{
+                if(idfield >= maxField){
+                  //Line has more field than requested, we raise an error
+                  return RN487x_badResponse;
+                }
+                field[idfield] = dv->buffTmp + i + 1;
+            }
+        }else{
+            sizeField[idfield]++;
+        }
+	}
+
+	//Wrong number of field, raise error.
+	if(idfield != maxField){
+        return RN487x_badResponse;
+	}
+
+    // make valid string
+	if(uuidsBuff){
+        uuidsBuff[0] = 0;
+	}
+    if(broadcastPayload){
+        broadcastPayload[0] = 0;
+	}
+
+    // Get address
+    memcpy(sdv->address, field[0], sizeField[0]);
+
+	// Get address type
+	sdv->addrType = field[1][0] - '0';
+
+	// Get name, only with connectable.
+	if(sdv->connectable){
+        memcpy(sdv->name, field[2], sizeField[2]);
+	}
+
+	//Get RSSI
+	unsigned int rssiFieldId = (sdv->connectable)? 4:2 ;
+    uint8_t datHi = ((field[rssiFieldId][0]>= '0' &&  field[rssiFieldId][0]<='9')? field[rssiFieldId][0] - '0' : field[rssiFieldId][0] - 55) & 0x0F;
+    uint8_t datLo = ((field[rssiFieldId][1]>= '0' &&  field[rssiFieldId][1]<='9')? field[rssiFieldId][1] - '0' : field[rssiFieldId][1] - 55) & 0x0F;
+    sdv->rssi =  (int8_t)((datHi << 4) + datLo);
+
+
+    // Get uuids
+    if(sdv->connectable && uuidsBuff){
+        memcpy(uuidsBuff, field[3], sizeField[3]);
+        uuidsBuff[sizeField[3]] = 0;
+    }
+
+    // Get beacon
+    if(!sdv->connectable && broadcastPayload){
+        char * beaconPos = strchr(field[3],':');
+        if(beaconPos){
+            strcpy(broadcastPayload, beaconPos+1);
+        }else{
+            return RN487x_memoryAdressError;
+        }
+    }
+    return RN487x_ok;
 }
 
 /* X

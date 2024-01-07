@@ -33,3 +33,37 @@
 
 1704291342 c:\projetlocal\diademe_5_recep\d5_soft\c_lib_rn487x\codeblock_example\ex\tests\test.h
 
+1704488503 source:c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\lserie.cpp
+	<windows.h>
+	<stdio.h>
+	"LSerie.h"
+
+1704488503 c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\lserie.h
+	<windows.h>
+	<string>
+
+1704638474 source:c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\rn487xh.cpp
+	"RN487xH.h"
+	<time.h>
+
+1704488503 c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\rn487xh.h
+	"LSerie.h"
+
+1704663669 source:c:\projetlocal\c_lib_rn487x\codeblock_example\ex\main.cpp
+	<iostream>
+	"Lib/RN487xH.h"
+	"Lib/RN487x.h"
+	"Tests/test.h"
+
+1704662838 c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\rn487x.h
+	"RN487xH.h"
+
+1704663669 c:\projetlocal\c_lib_rn487x\codeblock_example\ex\tests\test.h
+
+1704663843 source:c:\projetlocal\c_lib_rn487x\codeblock_example\ex\tests\test.cpp
+	"../Lib/RN487x.h"
+
+1704663587 source:c:\projetlocal\c_lib_rn487x\codeblock_example\ex\lib\rn487x.cpp
+	"RN487xH.h"
+	"RN487x.h"
+

@@ -1,6 +1,353 @@
 #include "../Lib/RN487x.h"
 
 
+int remoteTest(RN487x *dv1, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+    char myName[100];
+
+    RN487x_commandMode(dv1);
+    *err = (int)RN487x_isInCommandMode(dv1);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+
+    rnErr = RN487x_getDeviceName(dv1, myName);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    rnErr = RN487x_startScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    BleutoothScanDevice sdv;
+    sdv.name[0] = 0;
+    while(!strstr(sdv.name, "RN4870")){
+        rnErr = RN487x_scanGetNextEntry(dv1, &sdv, NULL, NULL, 1000);
+        if(rnErr != RN487x_timeOut && rnErr != RN487x_ok){
+            *err = (int)rnErr;
+            return testId;
+        }
+    }
+
+    rnErr = RN487x_stopScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_connectByAdress(dv1, sdv.addrType,sdv.address);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    /*rnErr = RN487x_connectLastBondedDevice(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }*/
+
+    RN487x_commandMode(dv1);
+    rnErr = RN487x_bondDevice(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_enterRemoteMode(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+
+    rnErr = RN487x_setDeviceName(dv1, "littleRocket");
+        if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    testId++;
+
+    char tmp[1000];
+
+    rnErr = RN487x_getDeviceName(dv1, tmp);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    if(strcmp(tmp, "littleRocket")){
+        *err = -1; // missmatch
+        return testId;
+    }
+
+    rnErr = RN487x_exitRemoteMode(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_disconnect(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    RN487x_commandMode(dv1);
+    rnErr = RN487x_getDeviceName(dv1, tmp);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    if(strcmp(tmp, myName)){
+        *err = -1; // missmatch
+        return testId;
+    }
+
+
+    *err = rnErr;
+    return testId;
+
+}
+
+int whiteListTest(RN487x *dv1, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+
+    RN487x_commandMode(dv1);
+    *err = (int)RN487x_isInCommandMode(dv1);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+
+    char data[1024];
+    rnErr = RN487x_readWhiteList(dv1,data);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    printf("WhiteList: %s\n", data);
+    testId++;
+
+    rnErr = RN487x_startScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    BleutoothScanDevice sdv;
+    sdv.name[0] = 0;
+    while(!strstr(sdv.name, "RN4870")){
+        rnErr = RN487x_scanGetNextEntry(dv1, &sdv, NULL, NULL, 1000);
+        if(rnErr != RN487x_timeOut && rnErr != RN487x_ok){
+            *err = (int)rnErr;
+            return testId;
+        }
+    }
+
+    rnErr = RN487x_stopScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_connectByAdress(dv1, sdv.addrType,sdv.address);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    RN487x_commandMode(dv1);
+    rnErr = RN487x_bondDevice(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    rnErr = RN487x_whiteListBondedDevice(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_disconnect(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+
+
+    rnErr = RN487x_readWhiteList(dv1,data);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    printf("WhiteList: %s\n", data);
+    testId++;
+    rnErr = RN487x_listBondedDevice(dv1,data);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    printf("bonded: %s\n", data);
+    testId++;
+
+
+
+    *err = rnErr;
+    return testId;
+}
+
+int trasparentUartTest(RN487x *dv1,  RN487x *dv2, int *err){
+    RN487x_Error rnErr;
+    int testId = 0;
+
+    RN487x_commandMode(dv1);
+    *err = (int)RN487x_isInCommandMode(dv1);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+
+    rnErr = RN487x_quitCommandMode(dv2);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_startScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    BleutoothScanDevice sdv;
+    sdv.name[0] = 0;
+
+    while(!strstr(sdv.name, "RN4870")){
+        rnErr = RN487x_scanGetNextEntry(dv1, &sdv, NULL, NULL, 1000);
+        if(rnErr != RN487x_timeOut && rnErr != RN487x_ok){
+            *err = (int)rnErr;
+            return testId;
+        }
+    }
+
+    rnErr = RN487x_stopScan(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    rnErr = RN487x_connectByAdress(dv1, sdv.addrType,sdv.address);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    char dataread[1024];
+    uint32_t lenread;
+    RN487xH_uartReadUntilTimeOut(dv2->hardwareInterface, dataread,&lenread, (uint32_t)1000); //clear
+    RN487xH_uartWriteStr(dv1->hardwareInterface, "Salut bastien, coment va tu?\r");
+
+    rnErr = RN487xH_uartReadUntilStringDetected(dv2->hardwareInterface, dataread, "\r", 1000);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    if(strcmp(dataread, "Salut bastien, coment va tu?")){
+        *err = -1; // missmatch
+        return testId;
+    }
+
+    RN487xH_uartReadUntilTimeOut(dv2->hardwareInterface, dataread,&lenread, (uint32_t)1000); //clear
+    RN487xH_uartWriteStr(dv1->hardwareInterface, "Salut bas$$$tien, coment va tu?\r");
+
+    rnErr = RN487xH_uartReadUntilStringDetected(dv2->hardwareInterface, dataread, "\r", 1000);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+    if(strcmp(dataread, "Salut bas$$$tien, coment va tu?")){
+        *err = -1; // missmatch
+        return testId;
+    }
+
+    RN487x_commandMode(dv1);
+
+    rnErr = RN487x_disconnect(dv1);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+
+
+
+
+
+    *err = rnErr;
+    return testId;
+
+}
+
+int scanTest(RN487x *dv, int *err){
+
+    RN487x_Error rnErr;
+    int testId = 0;
+
+    RN487x_commandMode(dv);
+    *err = (int)RN487x_isInCommandMode(dv);
+    if(!err){
+        *err = -2; // not in command mode
+        return testId;
+    }
+    testId++;
+
+    rnErr = RN487x_startScan(dv);
+    if(rnErr != RN487x_ok){
+        *err = (int)rnErr;
+        return testId;
+    }
+    Sleep(2000);
+
+    unsigned int scanId = 0;
+    while(1){
+        BleutoothScanDevice sdv;
+        char uudiBuff[1024];
+        char broadcastPayload[1024];
+        //printf("ID:%d",scanId);
+        rnErr = RN487x_scanGetNextEntry(dv, &sdv, uudiBuff, broadcastPayload, 1000);
+        if(rnErr == RN487x_timeOut){
+            printf(".\n");
+        }else if(rnErr == RN487x_ok){
+           printf("\nAddress:%s\nrssi:%d\nName:%s\nuuids:%s\nAdrtype:%d\nConnectable:%d\nPayload:%s\n"
+                  ,sdv.address, sdv.rssi, sdv.name,uudiBuff,sdv.addrType,sdv.connectable,broadcastPayload);
+        }else{
+                *err = (int)rnErr;
+            return testId;
+        }
+        scanId++;
+
+        if(scanId >= 100){
+            rnErr = RN487x_stopScan(dv);
+            *err = rnErr;
+            return testId;
+        }
+    }
+
+    *err = rnErr;
+    return testId;
+}
+
 int readWriteServices(RN487x *dv, int *err){
     RN487x_Error rnErr;
     int testId = 0;

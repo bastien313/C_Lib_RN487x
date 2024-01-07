@@ -10,7 +10,10 @@ int main()
     RN487x_hardwareInterface hi;
     RN487x bt;
 
-    if(RN487xH_init(&hi, "COM79") != RN487x_ok){
+    RN487x_hardwareInterface hi1;
+    RN487x bt1;
+
+    if(RN487xH_init(&hi, "COM9") != RN487x_ok){
         printf("Hardware init error!\n");
         return -1;
     }else{
@@ -23,6 +26,19 @@ int main()
          printf("Bt init Ok!\n");
     }
 
+   /* if(RN487xH_init(&hi1, "COM8") != RN487x_ok){
+        printf("Hardware init error!\n");
+        return -1;
+    }else{
+        printf("Hardware Ok\n");
+    }
+    if(RN487x_init(&bt1,&hi1) != RN487x_ok){
+         printf("Bt init error!\n");
+         return -1;
+    }else{
+         printf("Bt init Ok!\n");
+    }*/
+
 
     int err;
     int testId;
@@ -34,6 +50,14 @@ int main()
     }else{
         printf("Reset succes!\n");
     }
+
+   /* testId = deviceResetConfiguration(&bt1, &err);
+    if(err != RN487x_ok){
+        printf("Error (%d) on test (%d)\n", err, testId);
+        return -1;
+    }else{
+        printf("Reset succes!\n");
+    }*/
 
   /*  testId = test_getterSetter(&bt, &err);
     if(err != RN487x_ok){
@@ -57,13 +81,13 @@ int main()
     }*/
 
 
-    testId = servicesTest(&bt, &err);
+   /* testId = servicesTest(&bt, &err);
     if(err != RN487x_ok){
         printf("Error (%d) on test (%d)\n", err, testId);
         return -1;
     }else{
         printf("Services succes!\n");
-    }
+    }*/
 
    /* RN487x_commandMode(&bt);
     err = RN487x_listServices(&bt);
@@ -82,6 +106,39 @@ int main()
     }else{
         printf("Services succes!\n");
     }*/
+
+    /*testId = scanTest(&bt, &err);
+    if(err != RN487x_ok){
+        printf("Error (%d) on Scan (%d)\n", err, testId);
+        return -1;
+    }else{
+        printf("Scan succes!\n");
+    }*/
+/*
+    testId = trasparentUartTest(&bt,  &bt1, &err);
+    if(err != RN487x_ok){
+        printf("Error (%d) on uart trasnparent (%d)\n", err, testId);
+        return -1;
+    }else{
+        printf("Scan succes!\n");
+    }*/
+
+    /*testId = whiteListTest(&bt, &err);
+    if(err != RN487x_ok){
+        printf("Error (%d) on uart trasnparent (%d)\n", err, testId);
+        return -1;
+    }else{
+        printf("whiteList succes!\n");
+    }*/
+    testId = remoteTest(&bt, &err);
+    if(err != RN487x_ok){
+        printf("Error (%d) on uart trasnparent (%d)\n", err, testId);
+        return -1;
+    }else{
+        printf("remote succes!\n");
+    }
+
+
 
 
 
