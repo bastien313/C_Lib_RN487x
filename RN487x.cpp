@@ -2,29 +2,27 @@
 #include "RN487x.h"
 
 
-	RN487x_hardwareInterface *hardwareInterface; // define this structure yourself, see RN487xH.c/h.
-	char commandModeCaracter;
-	uint8_t ServerOrClientMode; // 0 = server, 1 = client;
-	BleutoothSerivce publicServices[4];
-	BleutoothSerivce privateServices[8];
-/*	
-void cpyAndRemovreCR(char *source, char *dest, uint32_t maxLen){
-	uint32_t noSize = (maxLen)? 0:1;
-	while(maxLen || noSize){
-		if(*source){
-			if(*source != '\r'){
-				*dest = *source;
-				dest++;
-				source++;
-			}
-			maxLen--;
-		}else{
-			return;
-		}
-	}
-}	*/
-	
-	
+void BleutoothScanDevice_clear(BleutoothScanDevice *sd){
+    memset(sd->address, 0, UUID_SIZE);
+    sd->addrType = 0;
+    memset(sd->name, 0, DEV_NAME_SIZE);
+    sd->rssi = 0;
+    sd->connectable = 0;
+}
+
+/*
+Verify if uuid is valid, uuid is unvalud  if uuid containt only '0' or 0.
+return 1 f
+*/
+int uuidIsValid(char *uuid){
+    for(unsigned int i = 0; i<UUID_SIZE; i++){
+        if(uuid[i] != 0 && uuid[i] != '0'){
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv){
 	for(unsigned int i = 0; i < UUID_SIZE; i++){
 		dv->uuid[i] = 0;
@@ -32,7 +30,7 @@ void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv){
 	dv->flag = 0;
 	dv->handle = 0;
 	dv->size = 0;
-	dv->data = null;
+	//dv->data = NULL;
 	dv->config = 0;
 }
 
@@ -48,9 +46,8 @@ void BleutoothSerivce_clear(BleutoothSerivce *dv){
 
 
 RN487x_Error RN487x_init(RN487x *dv, RN487x_hardwareInterface *hardwareLink){
-	RN487x_Error err;
 	dv->hardwareInterface = hardwareLink;
-	
+
 	//Clear services
 	for(unsigned int i = 0; i<PRIVATE_SERVICE_NUMBER; i++){
 		BleutoothSerivce_clear(&dv->privateServices[i]);
@@ -60,35 +57,35 @@ RN487x_Error RN487x_init(RN487x *dv, RN487x_hardwareInterface *hardwareLink){
 	}
 	dv->publicServicesCount = 0;
 	dv->privateServicesCount = 0;
-	
+
 	RN487xH_uartClear(dv->hardwareInterface);
-	
+
 	dv->standardTimeOutMs = 200;
-	dv->ServerOrClientMode = 0; // deflaut si server mode;
+	dv->serverOrClientMode = 0; // deflaut si server mode;
+	dv->localOrRemoteMode = 0; // local mode
 	//Enable command mode
 	dv->commandModeCaracter = '$';
-	
-	err = RN487x_commandMode(dv); 
-	if(err != RN487x_ok) 
+
+	/*err = RN487x_commandMode(dv);
+	if(err != RN487x_ok)
 		return err;
-	
-	err = RN487x_setAppearanceId(0x0556); // sensor = 0x0540, multisensor = 0x0556
-	if(err != RN487x_ok) 
-		return err;
+
+	err = RN487x_setAppearanceId(dv, 0x0556); // sensor = 0x0540, multisensor = 0x0556
+	if(err != RN487x_ok)
+		return err;*/
+
+    return RN487x_ok;
 }
 
 RN487x_PinStatus RN487x_getStatus(RN487x *dv){
-	return 	(RN487x_PinStatus)( RN487xH_readPinStatus1(dv->hardwareInterface) | 
+	return 	(RN487x_PinStatus)( RN487xH_readPinStatus1(dv->hardwareInterface) |
 							   (RN487xH_readPinStatus2(dv->hardwareInterface)<<1)
-							  )
-
+							  );
 }
 
 
-RN487x_Error RN487x_lineReplyChecker(RN487x *dv, char *validReply, char *errorReply, uint32_t timeOutMs){
-	
-	
-	if(RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,data, "\r", timeOutMs))
+RN487x_Error RN487x_lineReplyChecker(RN487x *dv, const char *validReply, const char *errorReply, uint32_t timeOutMs){
+	if(RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", timeOutMs))
 	{
 		//timeOut error
 		return RN487x_timeOut;
@@ -104,8 +101,27 @@ RN487x_Error RN487x_lineReplyChecker(RN487x *dv, char *validReply, char *errorRe
 	else{
 		return RN487x_badResponse;
 	}
-	return RN487x_badResponse; 
-}	
+	return RN487x_badResponse;
+}
+
+RN487x_Error RN487x_skipPromptLine(RN487x *dv){
+    char promptLine[10];
+
+    promptLine[0] = '\n';
+    promptLine[4] = '>';
+    promptLine[5] = ' ';
+    promptLine[6] = 0;
+    if(dv->localOrRemoteMode){
+        promptLine[1] = 'R';
+        promptLine[2] = 'M';
+        promptLine[3] = 'T';
+    }else{
+        promptLine[1] = 'C';
+        promptLine[2] = 'M';
+        promptLine[3] = 'D';
+    }
+    return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, promptLine, 500);
+}
 
 
 
@@ -115,13 +131,14 @@ RN487x_Error RN487x_lineReplyChecker(RN487x *dv, char *validReply, char *errorRe
 	of the Bluetooth MAC address to the name which is useful for generating a custom
 	name with unique numbering.This command does not have corresponding Get command
  */
-RN487x_Error RN487x_setSerializedDeviceName(RN487x *dv, char *name){
+RN487x_Error RN487x_setSerializedDeviceName(RN487x *dv, const char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	if(strlen(name)=>15) 
-		name[15] = 0;
-	sprintf(dv->buffTmp,"S-,%s\r",name);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"S-,%.15s\r",name);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* S$,<char>
@@ -129,13 +146,20 @@ RN487x_Error RN487x_setSerializedDeviceName(RN487x *dv, char *name){
 	in the three character pattern. This setting enables the user to change the default char-
 	acter to enter Command mode ($$$) to another character string. Restoring the factory
 	defaults returns the device to use $$$
+	!!!!
+	Don't use this, if you forget the command character,
+	you can't enter in comand mode and can't restore factory configuration.
+	!!!!
  */
-RN487x_Error RN487x_setCommandModeCaracter(RN487x *dv, char car){
+/*RN487x_Error RN487x_setCommandModeCaracter(RN487x *dv, const char car){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"S$,%c\r",car);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
-}
+	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp, 1);
+	err = RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
+}*/
 
 
 /* S%,<pre>,<post>
@@ -143,17 +167,20 @@ RN487x_Error RN487x_setCommandModeCaracter(RN487x *dv, char car){
 	the host controller. The pre and post delimiter are up to four printable ASCII characters.
 	If no parameter is given to the post delimiter, then the post delimiter is cleared; if no
 	parameter is given to the pre-delimiter, then both pre and post delimiters are cleared
+	!!!
+	Don't use this, this library works only with pré = % post = %
+	!!!
 */
-RN487x_Error RN487x_setPrePostDelimCarStatuString(RN487x *dv, char *pre, char *post){
+/*
+RN487x_Error RN487x_setPrePostDelimCarStatuString(RN487x *dv, const char *pre, const char *post){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	if(strlen(pre)=>4) 
-		pre[4] = 0;
-	if(strlen(post)=>4) 
-		post[4] = 0;
-	sprintf(dv->buffTmp,"S%c,<%s,%s>\r",0x25, pre, post); // verify < and >
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
-}
+	sprintf(dv->buffTmp,"S%c,%.4s,%.4s\r",0x25, pre, post); // verify < and >
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
+}*/
 
 /* A,<0-5>
 The Set Authentication command configures RN4870/71 Input/Output (I/O) capability
@@ -167,10 +194,13 @@ replaces the first entry on the table. If any particular entry in the bonded dev
 deleted, then a new entry to the table will take the place of the deleted entry.
 */
 RN487x_Error RN487x_setAuthenticationMode(RN487x *dv, RN487x_AuthenticationMode mode){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SA,%u\r",(unint8_t)mode); 
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SA,%u\r",(uint8_t)mode);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SB,<H8>
@@ -178,13 +208,16 @@ This command sets the baud rate of the UART communication. The input parameter i
 an 8-bit hex value in the range of 00 to 0B, representing baud rate from 2400 to 921K,
 as shown in Table 2-3
 */
-const uint8_t RN487xBaudArray[] = {921600, 460800, 230400, 115200, 57600, 38400, 28800, 19200, 14400, 9600, 4800, 2400};
+const uint32_t RN487xBaudArray[] = {921600, 460800, 230400, 115200, 57600, 38400, 28800, 19200, 14400, 9600, 4800, 2400};
 RN487x_Error RN487x_setBaudRate(RN487x *dv, RN487x_BaudRate bd){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SB,%02x\r",(unint8_t)bd);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	RN487xH_uartSetBaudRate(dv->hardwareInterface,RN487xBaudArray[(unint8_t)bd]);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SB,%02x\r",(uint8_t)bd);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	RN487xH_uartSetBaudRate(dv->hardwareInterface,RN487xBaudArray[(uint8_t)bd]);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SC,<0-2>
@@ -203,11 +236,14 @@ devices. Please refer to Bluetooth SIG website for details:
 */
 
 RN487x_Error RN487x_setAppearanceId (RN487x *dv, uint16_t id){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SDA,%04u\r",id); 
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
-}; 
+	sprintf(dv->buffTmp,"SDA,%04x\r",id);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
+};
 
 /* SDF,<text>
 This command sets the value of the firmware revision characteristic in the Device Infor-
@@ -218,13 +254,14 @@ rarely change. Therefore, values of characteristics in the Device Information Se
 are set and saved into NVM. All values of characteristics in the Device Information
 Service have a maximum size of 20 bytes
 */
-RN487x_Error RN487x_setFirmwareVersion (RN487x *dv, char *ver){
+RN487x_Error RN487x_setFirmwareVersion (RN487x *dv, const char *ver){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	if(strlen(ver)=>20) 
-		ver[20] = 0;
-	sprintf(dv->buffTmp,"SDF,%s\r",ver);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SDF,%.20s\r",ver);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SDH,<text>
@@ -232,11 +269,14 @@ This command sets the value of the hardware revision characteristics in the Devi
 Information Service. This command is only effective if the Device Information Service
 is enabled by command SS.
 */
-RN487x_Error RN487x_setHardwareRevison (RN487x *dv, char *rev){
+RN487x_Error RN487x_setHardwareRevison (RN487x *dv, const char *rev){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"SDH,%s\r",rev);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SDM,<text>
@@ -244,11 +284,14 @@ This command sets the model name characteristics in the Device Information Servi
 This command is only effective if the Device Information Service is enabled by
 command SS.
 */
-RN487x_Error RN487x_setModelName (RN487x *dv, char *name){
+RN487x_Error RN487x_setModelName (RN487x *dv, const char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"SDM,%s\r",name);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SDN,<text>
@@ -256,22 +299,28 @@ This command sets the manufacturer name characteristics in the Device Informatio
 Service. This command is only effective if the Device Information service is enabled by
 command SS.
 */
-RN487x_Error RN487x_setManufacturerName (RN487x *dv, char *name){
+RN487x_Error RN487x_setManufacturerName (RN487x *dv, const char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"SDN,%s\r",name);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SDR,<text>
 This command sets software revision in the Device Information Service. This command
 is only effective if the Device Information Service is enabled by command SS.
 */
-RN487x_Error RN487x_setSoftwareRevision (RN487x *dv, char *rev){
+RN487x_Error RN487x_setSoftwareRevision (RN487x *dv, const char *rev){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"SDR,%s\r",rev);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SDS,<text>
@@ -279,11 +328,14 @@ This command sets the value of serial number characteristics in the Device Infor
 Service. This command is only effective if the Device Information Service is enabled by
 command SS.
 */
-RN487x_Error RN487x_setSerialNumber (RN487x *dv, char *sn){
+RN487x_Error RN487x_setSerialNumber (RN487x *dv, const char *sn){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"SDS,%s\r",sn);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 
@@ -294,21 +346,20 @@ ated using PS and PC commands and the script created using the Embedded Scriptin
 Feature.
 */
 RN487x_Error RN487x_factoryConfiguration(RN487x *dv, uint8_t clearServices){
-	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	if(clearServices){
-		RN487xH_uartWrite(dv->hardwareInterface, "SF,2\r");
+		RN487xH_uartWriteStr(dv->hardwareInterface, "SF,2\r");
 	}else{
-		RN487xH_uartWrite(dv->hardwareInterface, "SF,1\r");
+		RN487xH_uartWriteStr(dv->hardwareInterface, "SF,1\r");
 	}
-	dv->ServerOrClientMode = 0;
+	dv->serverOrClientMode = 0;
 	dv->commandModeCaracter = '$';
-	return RN487x_lineReplyChecker(dv, "Reboot after Factory Reset\r", "Err\r", dv->standardTimeOutMs);
+    return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "%REBOOT%", 1000);
 }
 
 
 /* SGA,<0-5>
-Command SGA  adjust the output power of RN4870/71 under advertisement. 
+Command SGA  adjust the output power of RN4870/71 under advertisement.
 These commands expect a single digit as input
 parameter which can range from 0 to 5, where 0 represents highest power output and
 5 lowest power output. The approximate output power (in dBm) for each parameter
@@ -316,14 +367,17 @@ value is provided in Table 2-5. There can be a variation in output power based o
 individual calibration of the module and the enclosure in which the module is placed
 */
 RN487x_Error RN487x_setOuputPowerAdvertise(RN487x *dv, RN487x_OutputPower power){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SGA,%u\r",(unit8_t)power);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SGA,%u\r",(uint8_t)power);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SGC,<0-5>
-Command SGC  adjust the output power of RN4870/71 under connecting. 
+Command SGC  adjust the output power of RN4870/71 under connecting.
 These commands expect a single digit as input
 parameter which can range from 0 to 5, where 0 represents highest power output and
 5 lowest power output. The approximate output power (in dBm) for each parameter
@@ -331,23 +385,27 @@ value is provided in Table 2-5. There can be a variation in output power based o
 individual calibration of the module and the enclosure in which the module is placed
 */
 RN487x_Error RN487x_setOuputPowerConnected(RN487x *dv, RN487x_OutputPower power){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SGC,%u\r",(unit8_t)power);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SGC,%u\r",(uint8_t)power);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SN,<text>
 This command sets the device name, where <text> is up to 20 alphanumeric
 characters.
 */
-RN487x_Error RN487x_setDeviceName(RN487x *dv, char *name){
+RN487x_Error RN487x_setDeviceName(RN487x *dv, const char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	if(strlen(name)=>20) 
-		name[20] = 0;
-	sprintf(dv->buffTmp,"SN,%s\r",name);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"SN,%.20s\r",name);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SO,<0,1>
@@ -362,13 +420,21 @@ _IND pin is high, RN4870/71 runs 32 kHz clock. When RN4870/71 runs on 32 kHz
 clock, a BLE connection can still be maintained, but UART cannot receive data. If the
 user sends input data to the UART, UART_RX_IND pin must be pulled low to start 16
 MHz clock, then wait for 5 ms to operate UART again.
-*/
+!!!
+This function work fine but this library don't handle pin for wakeup from sleep mode.
+If device is in Sleep mode, UART don't work.
+Dont use it if you can't wake up externaly (bv PIN).
+!!!
+*//*
 RN487x_Error RN487x_setLowPowerMode(RN487x *dv, uint8_t powerMode){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SO,%u\r",(unit8_t)powerMode);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
-}
+	sprintf(dv->buffTmp,"SO,%u\r",(uint8_t)powerMode);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
+}*/
 
 
 /* SP,<4/6 digit pin>
@@ -383,16 +449,14 @@ passkey.
 • The four digit PIN code option is used to authenticate remote command connec-
 tion. For more details on remote command feature, refer to command ! (2.4.4).
 */
-RN487x_Error RN487x_setSecurityPin(RN487x *dv, uint16_t securityPin, uint8_t pinDigitCount){
+RN487x_Error RN487x_setSecurityPin(RN487x *dv, const char *securityPin){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	if(pinDigitCount == 6){
-		sprintf(dv->buffTmp,"SP,%06u\r",securityPin);
-	}else{
-		sprintf(dv->buffTmp,"SP,%04u\r",securityPin);
-	}
-	
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);	
+    sprintf(dv->buffTmp,"SP,%6s\r",securityPin);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* SR,<hex16>
@@ -402,24 +466,28 @@ reboot is necessary to make the changes effective. Table 2-6 shows the bitmap of
 features.
 */
 RN487x_Error RN487x_setDeviceConfiguration(RN487x *dv, uint16_t bitmap){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SR,%04x\r",(unit8_t)bitmap);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);	
+	sprintf(dv->buffTmp,"SR,%04x\r",(uint16_t)bitmap);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
+
 /*
 Set bit of SR register.
 */
-RN487x_Error RN487x_setBitDeviceConfiguration(RN487x *dv, RN487x_ConfigMask bitMask){.
+RN487x_Error RN487x_setBitDeviceConfiguration(RN487x *dv, RN487x_ConfigMask bitMask){
 	uint16_t oldBitmap;
 	RN487x_Error err;
-	
-	 err = RN487x_getDeviceConfiguration(RN487x *dv, &oldBitmap);
+
+	 err = RN487x_getDeviceConfiguration(dv, &oldBitmap);
 	 if(err != RN487x_ok){
 		 return err;
 	 }
-	 return RN487x_setDeviceConfiguration(dv, oldBitmap |= bit);
-	 
+	 return RN487x_setDeviceConfiguration(dv, oldBitmap |= bitMask);
+
 }
 
 /*
@@ -428,12 +496,12 @@ Reset bit of SR register.
 RN487x_Error RN487x_resetBitDeviceConfiguration(RN487x *dv, RN487x_ConfigMask bitMask){
 	uint16_t oldBitmap;
 	RN487x_Error err;
-	
-	 err = RN487x_getDeviceConfiguration(RN487x *dv, &oldBitmap);
+
+	 err = RN487x_getDeviceConfiguration(dv, &oldBitmap);
 	 if(err != RN487x_ok){
 		 return err;
 	 }
-	 return RN487x_setDeviceConfiguration(dv, oldBitmap &= ~bit);
+	 return RN487x_setDeviceConfiguration(dv, oldBitmap &= ~bitMask);
 }
 
 
@@ -449,39 +517,42 @@ For information on Bluetooth Services visit https://developer.bluetooth.org/gatt
 vices/Pages/ServicesHome.aspx.
 */
 RN487x_Error RN487x_setDefaultService(RN487x *dv, uint8_t bitmap){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"SS,%02x\r",(unit8_t)bitmap);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);	
+	sprintf(dv->buffTmp,"SS,%02x\r",(uint8_t)bitmap);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /*
 Set bit of Ss register.
 */
-RN487x_Error RN487x_setBitDefaultServiceRN487x *dv, RN487x_ServicesMask bitMask){
-	uint16_t oldBitmap;
+RN487x_Error RN487x_setBitDefaultService(RN487x *dv, RN487x_ServicesMask bitMask){
+	uint8_t oldBitmap;
 	RN487x_Error err;
-	
-	 err = RN487x_getDefaultService(RN487x *dv, &oldBitmap);
+
+	 err = RN487x_getDefaultService(dv, &oldBitmap);
 	 if(err != RN487x_ok){
 		 return err;
 	 }
-	 return RN487x_setDefaultService(dv, oldBitmap |= bit);
-	 
+	 return RN487x_setDefaultService(dv, oldBitmap |= bitMask);
+
 }
 
 /*
 Reset bit of Ss register.
 */
-RN487x_Error RN487x_getDefaultService(RN487x *dv, RN487x_ServicesMask bitMask){
-	uint16_t oldBitmap;
+RN487x_Error RN487x_resetBitDefaultService(RN487x *dv, RN487x_ServicesMask bitMask){
+	uint8_t oldBitmap;
 	RN487x_Error err;
-	
-	 err = RN487x_getDeviceConfiguration(RN487x *dv, &oldBitmap);
+
+	 err = RN487x_getDefaultService(dv, &oldBitmap);
 	 if(err != RN487x_ok){
 		 return err;
 	 }
-	 return RN487x_setDefaultService(dv, oldBitmap &= ~bit);
+	 return RN487x_setDefaultService(dv, oldBitmap &= ~bitMask);
 }
 
 /* ST,<hex16>,<hex16>,<hex16>,<hex16>
@@ -496,10 +567,13 @@ peripheral device must communicate with the central device, therefore, closely r
 to power consumption. The parameters, range and description are listed in Table 2-8
 */
 RN487x_Error RN487x_setCentralConectionParameters(RN487x *dv, uint16_t minInterval, uint16_t maxInterval, uint16_t latency, uint16_t timeOut){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"ST,%04x,%04x,%04x,%04x\r",minInterval, maxInterval, latency, timeOut);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);	
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* STA,<hex16>,<hex16>,<hex16>
@@ -513,10 +587,13 @@ The unit for fast and slow advertisement intervals unit is 0.625 ms. The fast ad
 ment time-out unit is 10.24 seconds. All input parameters are in Hex format
 */
 RN487x_Error RN487x_setAdvertiseIntervalA(RN487x *dv, uint16_t fastInterval, uint16_t fastTimeOut, uint16_t slowInterval){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"STA,%04x,%04x,%04x\r",fastInterval, fastTimeOut, slowInterval);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);	
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /*
@@ -525,10 +602,13 @@ This command sets the advertisement interval for beacons as defined by the 'IB' 
 corresponding Get command, GTB, returns the beacon advertisement interval.
 */
 RN487x_Error RN487x_setAdvertiseIntervalB(RN487x *dv, uint16_t beaconInterval){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"STB,%04x\r",beaconInterval);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 
@@ -545,9 +625,12 @@ ifies if the connection enables UART Transparent feature, where 1 indicates UART
 Transparent is enabled and 0 indicates UART Transparent is disabled.
 */
 RN487x_Error RN487x_getConnectionStatus(RN487x *dv, char* status){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GK\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, status, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GK\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, status, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* GNR
@@ -555,241 +638,329 @@ This command gets the peer device name when connected. If this command is issued
 before a connection is established, an error message is the output
 */
 RN487x_Error RN487x_getPeerDevName(RN487x *dv, char* name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GNR\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GNR\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 
-RN487x_Error RN487x_gsetSerializedDeviceName(RN487x *dv, char *name){
-	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "G-\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs)	
-}
-
+/*
 RN487x_Error RN487x_getCommandModeCaracter(RN487x *dv, char *car){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "G$\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, car, "\r", dv->standardTimeOutMs)
-}
+	RN487xH_uartWriteStr(dv->hardwareInterface, "G$\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, car, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
+}*/
 
 RN487x_Error RN487x_getPrePostDelimCarStatuString(RN487x *dv, char *pre, char *post){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "G\x25\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "G\x25\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	char *ptrTmp = strtok(dv->buffTmp, ',');
-	strcpy(ptrTmp, pre);
-	ptrTmp = strtok(null, ',');
-	strcpy(ptrTmp, post);
-	
-	return RN487x_ok;		
+	char *ptrTmp = strtok(dv->buffTmp, ",");
+	strcpy(pre, ptrTmp);
+	ptrTmp = strtok(NULL, ",");
+	strcpy(post, ptrTmp);
+
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getAuthenticationMode(RN487x *dv, RN487x_AuthenticationMode *mode){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GA\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",mode);
+
+	unsigned int temp;
+	sscanf(dv->buffTmp,"%u",&temp);
+	if (temp <= 5) {
+        *mode = (RN487x_AuthenticationMode)temp;
+    } else {
+        RN487x_skipPromptLine(dv);
+        return RN487x_badResponse;
+    }
+    RN487x_skipPromptLine(dv);
 	return RN487x_ok;
 }
 
-RN487x_Error RN487x_getAppearanceId (RN487x *dv, uint16_t *id){
+RN487x_Error RN487x_getAppearanceId (RN487x *dv, uint32_t *id){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDA\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",id);
-	return RN487x_ok;	
+	sscanf(dv->buffTmp,"%x",id);
+	RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getFirmwareVersion (RN487x *dv, char *ver){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDF\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, ver, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDF\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, ver, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getHardwareRevison (RN487x *dv, char *rev){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDH\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, rev, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDH\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, rev, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getModelName (RN487x *dv, char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDM\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDM\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getManufacturerName (RN487x *dv, char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDN\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDN\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getSoftwareRevision (RN487x *dv, char *rev){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDR\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, rev, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDR\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, rev, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getSerialNumber (RN487x *dv, char *sn){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GDS\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, sn, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GDS\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, sn, "\r", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_getOuputPowerAdvertise(RN487x *dv, RN487x_OutputPower *power){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GGA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GGA\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r\n", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",power);
-	return RN487x_ok;	
+    unsigned int temp;
+	sscanf(dv->buffTmp,"%u\r",&temp);
+	if (temp <= 5) {
+        *power = (RN487x_OutputPower)temp;
+    } else {
+        RN487x_skipPromptLine(dv);
+        return RN487x_badResponse;
+    }
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getOuputPowerConnected(RN487x *dv, RN487x_OutputPower *power){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GGC\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GGC\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r\n", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",power);
-	return RN487x_ok;		
+
+    unsigned int temp;
+	sscanf(dv->buffTmp,"%u",&temp);
+	if (temp <= 5) {
+        *power = (RN487x_OutputPower)temp;
+    } else {
+        RN487x_skipPromptLine(dv);
+        return RN487x_badResponse;
+    }
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 //RN487x_Error RN487x_getBaudRate(RN487x *dv, uint32_t *bd);
 RN487x_Error RN487x_getDeviceName(RN487x *dv, char *name){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GN\r");
-return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs)	
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GN\r");
+    err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, name, "\r", dv->standardTimeOutMs);
+    RN487x_skipPromptLine(dv);
+    return err;
 }
 /*
 0 = normal mode, 1 = low power
-*/ 
-RN487x_Error RN487x_getLowPowerMode(RN487x *dv, uint8_t *powerMode){
+*/
+RN487x_Error RN487x_getLowPowerMode(RN487x *dv, uint32_t *powerMode){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GO\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GO\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
 	sscanf(dv->buffTmp,"%u",powerMode);
-	return RN487x_ok;		
+	RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
-RN487x_Error RN487x_getSecurityPin(RN487x *dv, uint16_t *securityPin){
+RN487x_Error RN487x_getSecurityPin(RN487x *dv, char *securityPin){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GP\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
-	if(err != RN487x_ok)
-	{
-		return err;
-	}
-	sscanf(dv->buffTmp,"%u",securityPin);
-	return RN487x_ok;			
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GP\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, securityPin, "\r", dv->standardTimeOutMs);
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getDeviceConfiguration(RN487x *dv, uint16_t *bitmap){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GR\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GR\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",bitmap);
-	return RN487x_ok;		
+    unsigned int temp;
+	sscanf(dv->buffTmp,"%x",&temp);
+	if (temp <= 0xFFFF) {
+        *bitmap = (uint16_t)temp;
+    } else {
+        RN487x_skipPromptLine(dv);
+        return RN487x_badResponse;
+    }
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getDefaultService(RN487x *dv, uint8_t *bitmap){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GS\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GS\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp,"%u",bitmap);
-	return RN487x_ok;	
+    unsigned int temp;
+	sscanf(dv->buffTmp,"%x",&temp);
+	if (temp <= 0xFF) {
+        *bitmap = (uint8_t)temp;
+    } else {
+        RN487x_skipPromptLine(dv);
+        return RN487x_badResponse;
+    }
+    RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getCentralConectionParameters(RN487x *dv, uint16_t *minInterval, uint16_t *maxInterval, uint16_t *latency, uint16_t *timeOut){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GT\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GT\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	char *ptrTmp = strtok(dv->buffTmp, ',');
-	sscanf(ptrTmp, "%u", minInterval)
-	ptrTmp = strtok(null, ',');
-	sscanf(ptrTmp, "%u", maxInterval)
-	ptrTmp = strtok(null, ',');
-	sscanf(ptrTmp, "%u", latency)
-	ptrTmp = strtok(null, ',');
-	sscanf(ptrTmp, "%u", timeOut)
-	
-	return RN487x_ok;			
+	char *ptrTmp = strtok(dv->buffTmp, ",");
+	unsigned int temp;
+	sscanf(ptrTmp, "%x", &temp);
+	*minInterval = (uint16_t)temp;
+	ptrTmp = strtok(NULL, ",");
+	sscanf(ptrTmp, "%x", &temp);
+	*maxInterval = (uint16_t)temp;
+	ptrTmp = strtok(NULL, ",");
+	sscanf(ptrTmp, "%x", &temp);
+	*latency = (uint16_t)temp;
+	ptrTmp = strtok(NULL, ",");
+	sscanf(ptrTmp, "%x", &temp);
+	*timeOut = (uint16_t)temp;
+
+	RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 RN487x_Error RN487x_getAdvertiseIntervalA(RN487x *dv, uint16_t *fastInterval, uint16_t *fastTimeOut, uint16_t *slowInterval){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GTA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GTA\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	char *ptrTmp = strtok(dv->buffTmp, ',');
-	sscanf(ptrTmp, "%u", fastInterval)
-	ptrTmp = strtok(null, ',');
-	sscanf(ptrTmp, "%u", fastTimeOut)
-	ptrTmp = strtok(null, ',');
-	sscanf(ptrTmp, "%u", slowInterval)
-	
-	return RN487x_ok;		
+	char *ptrTmp = strtok(dv->buffTmp, ",");
+	unsigned int temp;
+	sscanf(ptrTmp, "%x", &temp);
+	*fastInterval = (uint16_t)temp;
+	ptrTmp = strtok(NULL, ",");
+	sscanf(ptrTmp, "%x", &temp);
+	*fastTimeOut = (uint16_t)temp;
+	ptrTmp = strtok(NULL, ",");
+	sscanf(ptrTmp, "%x", &temp);
+	*slowInterval = (uint16_t)temp;
+
+	RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 RN487x_Error RN487x_getAdvertiseIntervalB(RN487x *dv, uint16_t *beaconInterval){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "GTA\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "GTB\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok)
 	{
+	    RN487x_skipPromptLine(dv);
 		return err;
 	}
-	sscanf(dv->buffTmp, "%x", beaconInterval);
+	unsigned int temp;
+	sscanf(dv->buffTmp, "%x", &temp);
+	*beaconInterval = (uint16_t)temp;
 
-	return RN487x_ok;	
+	RN487x_skipPromptLine(dv);
+	return RN487x_ok;
 }
 
 
@@ -805,18 +976,42 @@ You can change the character string used to enter Command mode with the S$
 command
 */
 RN487x_Error RN487x_commandMode(RN487x *dv){
-	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"%c%c%c",dv->commandModeCaracter);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "CMD> ", "Err\r", dv->standardTimeOutMs);
+    if(!RN487x_isInCommandMode(dv)){
+        RN487xH_uartClear(dv->hardwareInterface);
+        dv->buffTmp[0] = dv->commandModeCaracter;
+        dv->buffTmp[1] = dv->commandModeCaracter;
+        dv->buffTmp[2] = dv->commandModeCaracter;
+        RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp, 3);
+        return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "CMD> ", dv->standardTimeOutMs);
+    }
+    return RN487x_ok;
 }
+
+
+/*
+Check if devise is in command mode.
+return 1 if yes, 0 if no.
+This command don't say if the device work correctly.
+*/
+uint32_t RN487x_isInCommandMode(RN487x *dv){
+    RN487x_OutputPower trash;
+    if(RN487x_getOuputPowerAdvertise(dv, &trash) == RN487x_ok)
+        return 1;
+    else
+        return 0;
+}
+
+
 /* ---
 This command causes the device to exit Command mode, displaying END.
 */
 RN487x_Error RN487x_quitCommandMode(RN487x *dv){
-	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "---\r");
-	return RN487x_lineReplyChecker(dv, "END\r", "Err\r", dv->standardTimeOutMs);
+    if(RN487x_isInCommandMode(dv)){
+        RN487xH_uartClear(dv->hardwareInterface);
+        RN487xH_uartWriteStr(dv->hardwareInterface, "---\r");
+        return RN487x_lineReplyChecker(dv, "END", "Err", dv->standardTimeOutMs);
+    }
+    return RN487x_ok;
 }
 /* !,1
 RN4870/71 has the capability of Remote Command mode over UART Transparent
@@ -826,8 +1021,8 @@ Remote Command mode feature
 */
 RN487x_Error RN487x_enterRemoteMode(RN487x *dv){
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "!,1\r");
-	return RN487x_lineReplyChecker(dv, "RMT> ", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "!,1\r");
+	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "RMT> ", 1000);
 }
 
 /* !,0
@@ -839,8 +1034,8 @@ Remote Command mode feature.
 */
 RN487x_Error RN487x_exitRemoteMode(RN487x *dv){
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "!,0\r");
-	return RN487x_lineReplyChecker(dv, "%RMT_CMD_OFF%", "Err", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "!,0\r");
+	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "%RMT_CMD_OFF%", 1000);
 }
 
 /* |O,<hex8>,<hex8>
@@ -852,11 +1047,14 @@ for a corresponding pin, and the pin is assigned to a predefined function, such 
 automatically cleared. For pin function assignment, please check command SW
 (2.4.26).
 */
-RN487x_Error RN487x_writeIO(RN487x *dv, uint8_t mask, uint8_t value){
+RN487x_Error RN487x_writeIO(RN487x *dv, char mask, uint8_t value){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"|O,%02x,%02x\r",mask, value);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* A[,<hex16>,<hex16>]
@@ -875,10 +1073,13 @@ ment with the interval parameter can last forever if there is no second input pa
 or not up to the time indicated by the second input parameter
 */
 RN487x_Error RN487x_startAdvertise(RN487x *dv, uint16_t fastInterval, uint8_t slowInterval){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"A,%04x,%04x\r",fastInterval, slowInterval);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 
@@ -895,9 +1096,18 @@ However, this command is only for securing link rather than saving connection
 information.
 */
 RN487x_Error RN487x_bondDevice(RN487x *dv){
+    RN487x_Error errBond;
+    char* errAok;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "B\r");
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "B\r");
+	errBond = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "%SECURED%%BONDED%", 1000);
+	errAok = strstr(dv->buffTmp, "AOK");
+	if(errBond == RN487x_ok || errAok){
+        RN487x_skipPromptLine(dv);
+        return RN487x_ok;
+	}
+
+	return errBond;
 }
 /* C
 This command makes RN4870/71 try to connect to the last bonded device. When this
@@ -908,9 +1118,11 @@ secures the link once the connection is established.
 RN487x_Error RN487x_connectLastBondedDevice(RN487x *dv){
 	RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "C\r");
-	
-	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp,1000)
+	RN487xH_uartWriteStr(dv->hardwareInterface, "C\r");
+	uint32_t readLen = 0;
+
+	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp, &readLen, 1000);
+	dv->buffTmp[readLen] = 0; // Make a valid string.
 	if(err != RN487x_ok){
 		return err;
 	}
@@ -923,7 +1135,7 @@ RN487x_Error RN487x_connectLastBondedDevice(RN487x *dv){
 	if(strstr(dv->buffTmp, "%CONNECT%")){
 		return RN487x_ok;
 	}
-	return RN487x_badResponse;	
+	return RN487x_badResponse;
 }
 
 /*
@@ -934,10 +1146,14 @@ used to reconnect to a bonded device, RN4870/71 automatically secures the link o
 the connection is established. To display the list of stored devices, use command LB.
 */
 RN487x_Error RN487x_connectBondedDevice(RN487x *dv, uint8_t bondId){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
 	sprintf(dv->buffTmp,"C%x\r",bondId);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp,1000)
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	uint32_t readLen = 0;
+
+	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp, &readLen, 1000);
+	dv->buffTmp[readLen] = 0; // Make a valid string.
 	if(err != RN487x_ok){
 		return err;
 	}
@@ -950,7 +1166,7 @@ RN487x_Error RN487x_connectBondedDevice(RN487x *dv, uint8_t bondId){
 	if(strstr(dv->buffTmp, "%CONNECT%")){
 		return RN487x_ok;
 	}
-	return RN487x_badResponse;	
+	return RN487x_badResponse;
 }
 
 /*
@@ -961,11 +1177,24 @@ bonded device, the link is not automatically secured. Instead, the user must use
 command B to secure the link after the connection is established.
 public = 0, private = 1
 */
-RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress){
+RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, const char *adress){
+    RN487x_Error err;
+    char validReply[100];
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"C,%x,%012x\r",publicOrPrivate, bondId);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp,1000)
+	sprintf(dv->buffTmp,"C,%x,%.12s\r",publicOrPrivate, adress);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	uint32_t readLen = 0;
+
+	// wait  valid connection reply
+	sprintf(validReply, "%cCONNECT,%x,%.12s",'%', publicOrPrivate, adress);
+    err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, validReply, 1000);
+    if(err != RN487x_ok){
+		return err;
+	}
+
+    // wait optionaly flag, secured, bonded or discoonected
+	err = RN487xH_uartReadUntilTimeOut(dv->hardwareInterface, dv->buffTmp, &readLen, 1000);
+	dv->buffTmp[readLen] = 0; // Make a valid string.
 	if(err != RN487x_ok){
 		return err;
 	}
@@ -975,10 +1204,8 @@ RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, uint64_
 	if(strstr(dv->buffTmp, "%DISCONNECT%")){
 		return RN487x_errorResponse;
 	}
-	if(strstr(dv->buffTmp, "%CONNECT%")){
-		return RN487x_ok;
-	}
-	return RN487x_badResponse;		
+
+	return RN487x_ok;
 }
 
 /* I
@@ -987,8 +1214,9 @@ mand expects no input parameter. Once this command is issued, RN4870/71 automat-
 ically enters Data mode
 */
 RN487x_Error RN487x_startUartTransparentMode(RN487x *dv){
+    char tmp = 'I';
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "I");
+	RN487xH_uartWrite(dv->hardwareInterface, &tmp,1);
 	return RN487x_ok;
 }
 /*
@@ -1003,28 +1231,34 @@ uted by one or more AD structures which includes the one byte of length, one byt
 AD type and AD data must be less than or equal to 31 bytes.
 charSource = A for advertise, B for beacon, S for scan.
 */
-RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t flag, uint8_t *data, uint32_t size, uint8_t permanent, char charSource){
+RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t adType, uint8_t *data, uint32_t size, uint8_t permanent, char charSource){
 	char locBuffTmp[10];
-	
-	sprintf(dv->buffTmp,"%c%c,%02x", (permanent)? 'N': 'I', charSource)
+	RN487x_Error err;
+
+	sprintf(dv->buffTmp,"%c%c,%02x,", (permanent)? 'N': 'I', charSource, adType);
 	for(unsigned int i = 0; i< size; i++)
 	{
-		sprintf(locBuffTmp,"02x", *data);
+		sprintf(locBuffTmp,"%02x", *data);
 		strcat(dv->buffTmp, locBuffTmp);
 		data++;
 	}
 	strcat(dv->buffTmp, "\r");
-	
+
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv, uint8_t permanent, char charSource){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"%c%c,Z\r", (permanent)? 'N': 'I', charSource)
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"%c%c,Z\r", (permanent)? 'N': 'I', charSource);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* JA,<0,1>,<MAC>
@@ -1041,11 +1275,14 @@ A random address stored in the white list cannot be resolved. If the peer device
 not change the random address, it is valid in the white list. If the random address is
 changed, this device is no longer considered to be on the white list.
 */
-RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress){
+RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, const char *adress){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	sprintf(dv->buffTmp,"JA,%x,%012x\r",publicOrPrivate, adress);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	sprintf(dv->buffTmp,"JA,%x,%s\r",publicOrPrivate, adress);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* JB
@@ -1059,9 +1296,12 @@ useful if the peer device is a iOS or Android device which uses resolvable rando
 address.
 */
 RN487x_Error RN487x_whiteListBondedDevice(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "JB\r");
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "JB\r");
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* JC
@@ -1070,9 +1310,12 @@ ture is disabled. Command JC does not expect any parameter.
 The only way to disable white list is to clear it.
 */
 RN487x_Error RN487x_clearWhiteList(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "JC\r");
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "JC\r");
+	err = RN487x_lineReplyChecker(dv, "AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* JD
@@ -1081,9 +1324,12 @@ Each MAC address displays in the white list, followed by 0 or 1 to indicate addr
 type, separated by a coma.
 */
 RN487x_Error RN487x_readWhiteList(RN487x *dv, char *data){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "JD\r");
-	return RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, data, "END\r" dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "JD\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, data, "END\r\n", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* K,1
@@ -1091,9 +1337,12 @@ Command K is used to disconnect the active BTLE link. It can be used in central 
 peripheral role.
 */
 RN487x_Error RN487x_disconnect(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "K,1\r");
-	return RN487x_lineReplyChecker(dv, "AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "K,1\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "%DISCONNECT%", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /* M
@@ -1103,15 +1352,18 @@ remote peer. Command M does not expect any parameter.
 The return value of command M is the signal strength in dBm
 */
 RN487x_Error RN487x_getSignalStreng(RN487x *dv, float *strength){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487x_Error err;
-	RN487xH_uartWrite(dv->hardwareInterface, "M\r");
-	 
+	RN487xH_uartWriteStr(dv->hardwareInterface, "M\r");
+
 	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok){
+        RN487x_skipPromptLine(dv);
 		return err;
 	}
 	sscanf(dv->buffTmp,"%f",strength);
+
+	RN487x_skipPromptLine(dv);
 	return RN487x_ok;
 }
 
@@ -1121,8 +1373,9 @@ has one mandatory parameter of 1. After rebooting RN4870/71, all prior made sett
 changes takes effect.
 */
 RN487x_Error RN487x_reboot(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "R,1\r");
+	RN487xH_uartWriteStr(dv->hardwareInterface, "R,1\r");
 	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "%REBOOT%", dv->standardTimeOutMs);
 	if(err != RN487x_ok){
 		return err;
@@ -1141,9 +1394,12 @@ index is available, the new pairing and bonding information will be added at the
 available empty index.
 */
 RN487x_Error RN487x_clearBonding(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "U,1\r");
-	return RN487x_lineReplyChecker(dv,"AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "U,1\r");
+	err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 /// ------------------------------------------ List command ------------------------------------------------------ ///
@@ -1162,9 +1418,11 @@ the bonded information, since the peer device may use a different random address
 when RN4870/71 tries to reconnect
 */
 RN487x_Error RN487x_listBondedDevice(RN487x *dv, char *device){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "LB\r");
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,device, "END\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "LB\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,device, "END\r\n", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
 	if(err != RN487x_ok){
 		return err;
 	}
@@ -1175,9 +1433,10 @@ RN487x_Error RN487x_listBondedDevice(RN487x *dv, char *device){
 /* LS LC
 Command LS, LC lists the server services and their characteristics.
 Update in structure memory.
-If device is in client mode service present in strucutre memory will be device service.
+If device is in client mode service present in structure memory will be device service.
 */
 RN487x_Error RN487x_listServices(RN487x *dv){
+    RN487x_Error err;
 	//Clear services
 	RN487xH_uartClear(dv->hardwareInterface);
 	for(unsigned int i = 0; i<PRIVATE_SERVICE_NUMBER; i++){
@@ -1186,73 +1445,85 @@ RN487x_Error RN487x_listServices(RN487x *dv){
 	for(unsigned int i = 0; i<PUBLIC_SERVICE_NUMBER; i++){
 		BleutoothSerivce_clear(&dv->publicServices[i]);
 	}
-	if(dv->ServerOrClientMode){
+	if(dv->serverOrClientMode){
 		//cliend mode
-		RN487xH_uartWrite(dv->hardwareInterface, "LC\r");
+		RN487xH_uartWriteStr(dv->hardwareInterface, "LC\r");
 	}else{
 		//server mode
-		RN487xH_uartWrite(dv->hardwareInterface, "LS\r");
+		RN487xH_uartWriteStr(dv->hardwareInterface, "LS\r");
 	}
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,device, "END\r", dv->standardTimeOutMs);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface, dv->buffTmp, "END\r", dv->standardTimeOutMs);
 	if(err != RN487x_ok){
+        //RN487x_skipPromptLine(dv);
 		return err;
 	}
-	char *line = strtok(dv->buffTmp, "\r"));
+
+	char *strtokLineLast;
+	char *strtokFieldLast;
+
+	char *line = strtok_r(dv->buffTmp, "\r\n", &strtokLineLast);
 	dv->publicServicesCount = 0;
 	dv->privateServicesCount = 0;
 	uint32_t caracteristcId = 0;
-	BleutoothSerivce *servPtr = null;
+	BleutoothSerivce *servPtr = NULL;
 	while(line)
 	{
 		if(line[0] == ' ' && line[1] == ' '){
 			// caracteristic
-			uint16_t intval;
-			
-			char *valueStr = strtok(&line[2], ","));
-			if (valueStr){
-				// uuid
-				strcpy(servPtr->characteristic[caracteristcId]->uuid, line);
-			}
-			
-			valueStr = strtok(null, ","));
-			if (valueStr){
-				//handle
-				sscanf(valueStr,"%u",&intval);
-				servPtr->characteristic[caracteristcId]->uuid = intval;
-			}
-			
-			valueStr = strtok(null, ","));
-			if (valueStr){
-				//flag
-				sscanf(valueStr,"%u",&intval);
-				servPtr->characteristic[caracteristcId]->flag = (uint8_t)intval;
-			}
-			
-			valueStr = strtok(null, ","));
-			if (valueStr){
-				//handle
-				sscanf(valueStr,"%u",&intval);
-				servPtr->characteristic[caracteristcId]->config = (uint8_t)intval;
-			}
+			uint32_t intval;
+
+            char *field = strtok_r(&line[2], ",", &strtokFieldLast);
+
+            if(field){
+                strcpy(servPtr->characteristic[caracteristcId].uuid, field);
+            }else{
+                return RN487x_memoryAdressError;
+            }
+
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //handle
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].handle = intval;
+            }else{
+                return RN487x_memoryAdressError;
+            }
+
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //flag
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].flag = (uint8_t)intval;
+            }else{
+                return RN487x_memoryAdressError;
+            }
+
+            field = strtok_r(NULL, ",", &strtokFieldLast);
+            if(field){
+                //flag
+				sscanf(field,"%x",&intval);
+				servPtr->characteristic[caracteristcId].config  = (uint8_t)intval;
+            }
 			caracteristcId++;
 		}else{
 			caracteristcId = 0;
 			if(strlen(line) > 6){
 				//private
-				servPtr = dv->privateServices[dv->privateServicesCount];
+				servPtr = &dv->privateServices[dv->privateServicesCount];
 				dv->privateServicesCount++;
 				strcpy(servPtr->uuid, line);
 			}else{
 				//public
-				servPtr = dv->publicServices[dv->publicServicesCount];
+				servPtr = &dv->publicServices[dv->publicServicesCount];
 				dv->publicServicesCount ++;
 				strcpy(servPtr->uuid, line);
 			}
 		}
+		line = strtok_r(NULL, "\r\n", &strtokLineLast);
 	}
-	
+    //RN487x_skipPromptLine(dv);
 	return RN487x_ok;
-	
+
 }
 
 /* CI
@@ -1269,9 +1540,12 @@ Since command CI retrieves critical client information from the remote GATT serv
 is a perquisite over any Client Service related commands, such as LC, CHR and CHW.
 */
 RN487x_Error RN487x_startClientOperation(RN487x *dv){
+    RN487x_Error err;
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, "CI\r");
-	return RN487x_lineReplyChecker(dv,"AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "CI\r");
+	err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
 
@@ -1283,56 +1557,236 @@ If service already exist a new copy will be crated, multiple service can have sa
 */
 RN487x_Error RN487x_createServerServices(RN487x *dv, BleutoothSerivce *service){
 	RN487x_Error err;
-	if(dv->ServerOrClientMode){
-		// client mode 
+	if(dv->serverOrClientMode){
+		// client mode
 		return RN487x_disable_in_client_mode;
 	}
-	
-	sprintf(dv->buffTmp,"PS,%s",service->uuid);
+
+	sprintf(dv->buffTmp,"PS,%s\r",service->uuid);
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	err = RN487x_lineReplyChecker(dv,"AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv,"AOK", "Err", 1000);
+	RN487x_skipPromptLine(dv);
 	if(err != RN487x_ok){
 		return err;
 	}
 	for(unsigned int i=0; i<SERVICE_CHARACTERISTICS_NUMBER; i++){
-		if(service->characteristic[i]->uuid){
+		if(uuidIsValid(service->characteristic[i].uuid)){
 			// uuid is not 0 => exist, we add it.
-			sprintf(dv->buffTmp,"PC,%s,%02x,%02x",service->characteristic[i]->uuid,
-												  service->characteristic[i]->flag,
-												  service->characteristic[i]->size,);
-			err = RN487x_lineReplyChecker(dv,"AOK\r", "Err\r", dv->standardTimeOutMs);
+			sprintf(dv->buffTmp,"PC,%s,%02x,%02x\r",service->characteristic[i].uuid,
+												  service->characteristic[i].flag,
+												  service->characteristic[i].size);
+            RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+			err = RN487x_lineReplyChecker(dv,"AOK", "Err", 1000);
+			RN487x_skipPromptLine(dv);
 			if(err != RN487x_ok){
+			    //RN487x_skipPromptLine(dv);
 				return err;
 			}
 		}
 	}
+	//RN487x_skipPromptLine(dv);
 	return RN487x_ok;
 }
 
 
-RN487x_Error RN487x_writeCaracteristic(BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t dataLen){
+RN487x_Error RN487x_writeCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t dataLen){
+    RN487x_Error err;
 	char valTmp[10];
-	char carClienServer = (dv->ServerOrClientMode)?'C':'S';
-	sprintf(dv->buffTmp,"%cHW,%s",carClienServer, service->uuid);
+	char carClienServer = (dv->serverOrClientMode)?'C':'S';
+	sprintf(dv->buffTmp,"%cHW,%04x,",carClienServer, caracteristic->handle);
 	for(unsigned int i=0; i<dataLen; i++){
 		sprintf(valTmp,"%02x",data[i]);
 		strcat(dv->buffTmp,valTmp);
 	}
 	strcat(dv->buffTmp,"\r");
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	return RN487x_lineReplyChecker(dv,"AOK\r", "Err\r", dv->standardTimeOutMs);
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+	return err;
 }
 
-RN487x_Error RN487x_readCaracteristic(BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t readLen){
-	char carClienServer = (dv->ServerOrClientMode)?'C':'S';
-	sprintf(dv->buffTmp,"%cHR,%s\r",carClienServer, service->uuid);	
+RN487x_Error RN487x_readCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t readLen){
+    RN487x_Error err;
+	char carClienServer = (dv->serverOrClientMode)?'C':'S';
+	sprintf(dv->buffTmp,"%cHR,%04x\r",carClienServer, caracteristic->handle);
 	RN487xH_uartClear(dv->hardwareInterface);
-	RN487xH_uartWrite(dv->hardwareInterface, dv->buffTmp);
-	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,data, "\r", dv->standardTimeOutMs);
-	if(err != RN487x_ok){
+	RN487xH_uartWriteStr(dv->hardwareInterface, dv->buffTmp);
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r", dv->standardTimeOutMs);
+    if(err != RN487x_ok){
+        RN487x_skipPromptLine(dv);
 		return err;
 	}
+
+	if(strlen(dv->buffTmp) < readLen*2){
+        readLen = strlen(dv->buffTmp)/2;
+	}
+	uint32_t buffId = 0;
+	for(unsigned int i=0; i< readLen; i++){
+        uint8_t datHi = ((dv->buffTmp[buffId]>= '0' &&  dv->buffTmp[buffId]<='9')? dv->buffTmp[buffId] - '0' : dv->buffTmp[buffId] - 55) & 0x0F;
+        buffId++;
+        uint8_t datLo = ((dv->buffTmp[buffId]>= '0' &&  dv->buffTmp[buffId]<='9')? dv->buffTmp[buffId] - '0' : dv->buffTmp[buffId] - 55) & 0x0F;
+        data[i] =   (datHi << 4) + datLo;
+        buffId++;
+	}
+
+	RN487x_skipPromptLine(dv);
 	return RN487x_ok;
+}
+
+BleutoothSerivce *RN487x_getServicesStructureByUuid(RN487x *dv, const char *uuidSearch){
+    for(unsigned int i = 0; i<PRIVATE_SERVICE_NUMBER; i++){
+        if(!strcmp(dv->privateServices[i].uuid, uuidSearch))
+            return &dv->privateServices[i];
+	}
+	for(unsigned int i = 0; i<PUBLIC_SERVICE_NUMBER; i++){
+        if(!strcmp(dv->publicServices[i].uuid, uuidSearch))
+            return &dv->privateServices[i];
+	}
+	return NULL;
+}
+
+BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSerivce *sv, const char *uuidSearch, uint8_t flag){
+    if(sv){
+        for(unsigned int i = 0; i<SERVICE_CHARACTERISTICS_NUMBER; i++){
+            if(!strcmp(sv->characteristic[i].uuid, uuidSearch) && sv->characteristic[i].flag == flag)
+                return &sv->characteristic[i];
+        }
+    }
+	return NULL;
+}
+
+/* F[,<hex16>,<hex16>]
+Command F, when invoked, automatically switches the device into Central GAP role
+and start BLE scanning.
+If no parameter is provided, command F starts the process of scanning with default
+scan interval of 375 milliseconds and scan window of 250 milliseconds. The user has
+the option to specify the scan interval and scan window as first and second parameter,
+respectively. The inputs are in 16-bit hex format. Each unit is 0.625 millisecond. Scan
+interval must be larger than or equal to scan window. The scan interval and the scan
+window values can range from 2.5 milliseconds to 10.24 seconds. Use X command to
+stop an active scan.
+Default: 375 ms for scan interval, 250 ms for scan window
+*/
+RN487x_Error RN487x_startScan(RN487x *dv){
+    RN487x_Error err;
+	RN487xH_uartClear(dv->hardwareInterface);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "F\r");
+	err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "Scanning\r\n", 1000);
+    if(err != RN487x_ok){
+        RN487x_stopScan(dv);
+		return err;
+	}
+    return err;
+}
+
+//#include <time.h>
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *sdv, char *uuidsBuff, char *broadcastPayload, uint32_t timeOutMs){
+    RN487x_Error err;
+    err = RN487xH_uartReadUntilStringDetected(dv->hardwareInterface,dv->buffTmp, "\r\n", timeOutMs);
+    if(err != RN487x_ok){
+		return err;
+	}
+
+	BleutoothScanDevice_clear(sdv);
+	unsigned int lineLen = strlen(dv->buffTmp);
+	if( (lineLen == 0 ) || dv->buffTmp[0] != '%' || dv->buffTmp[lineLen-1] != '%'){
+        // Line is unvalid
+        return RN487x_badResponse;
+	}
+	dv->buffTmp[lineLen-1] = 0; // clear last %
+
+	unsigned int maxField = 4;
+	char * field[5] = {NULL, NULL, NULL, NULL, NULL};
+	unsigned int sizeField[5] = {0, 0, 0, 0, 0};
+	unsigned int idfield = 0;
+    if (!strstr(dv->buffTmp, "Brcst:")){
+        sdv->connectable = 1;
+        maxField = 5;
+	}
+
+	//Get field ptr and size.
+	field[0] = dv->buffTmp + 1;
+	for(unsigned int i=1; i< lineLen; i++){
+        if(dv->buffTmp[i] == ',' || dv->buffTmp[i] ==  0){
+            // next field detection
+            //sizeField[idfield] = (dv->buffTmp + i) - field[idfield];
+            idfield++;
+
+            if(dv->buffTmp[i] == 0){
+                //Last field.
+                break;
+            }else{
+                if(idfield >= maxField){
+                  //Line has more field than requested, we raise an error
+                  return RN487x_badResponse;
+                }
+                field[idfield] = dv->buffTmp + i + 1;
+            }
+        }else{
+            sizeField[idfield]++;
+        }
+	}
+
+	//Wrong number of field, raise error.
+	if(idfield != maxField){
+        return RN487x_badResponse;
+	}
+
+    // make valid string
+	if(uuidsBuff){
+        uuidsBuff[0] = 0;
+	}
+    if(broadcastPayload){
+        broadcastPayload[0] = 0;
+	}
+
+    // Get address
+    memcpy(sdv->address, field[0], sizeField[0]);
+
+	// Get address type
+	sdv->addrType = field[1][0] - '0';
+
+	// Get name, only with connectable.
+	if(sdv->connectable){
+        memcpy(sdv->name, field[2], sizeField[2]);
+	}
+
+	//Get RSSI
+	unsigned int rssiFieldId = (sdv->connectable)? 4:2 ;
+    uint8_t datHi = ((field[rssiFieldId][0]>= '0' &&  field[rssiFieldId][0]<='9')? field[rssiFieldId][0] - '0' : field[rssiFieldId][0] - 55) & 0x0F;
+    uint8_t datLo = ((field[rssiFieldId][1]>= '0' &&  field[rssiFieldId][1]<='9')? field[rssiFieldId][1] - '0' : field[rssiFieldId][1] - 55) & 0x0F;
+    sdv->rssi =  (int8_t)((datHi << 4) + datLo);
+
+
+    // Get uuids
+    if(sdv->connectable && uuidsBuff){
+        memcpy(uuidsBuff, field[3], sizeField[3]);
+        uuidsBuff[sizeField[3]] = 0;
+    }
+
+    // Get beacon
+    if(!sdv->connectable && broadcastPayload){
+        char * beaconPos = strchr(field[3],':');
+        if(beaconPos){
+            strcpy(broadcastPayload, beaconPos+1);
+        }else{
+            return RN487x_memoryAdressError;
+        }
+    }
+    return RN487x_ok;
+}
+
+/* X
+Command X stops scan process started by command F. Command X does not expect
+any parameter.
+*/
+RN487x_Error RN487x_stopScan(RN487x *dv){
+    RN487x_Error err;
+	RN487xH_uartClear(dv->hardwareInterface);
+	RN487xH_uartWriteStr(dv->hardwareInterface, "X\r");
+    err = RN487x_lineReplyChecker(dv,"AOK", "Err", dv->standardTimeOutMs);
+	RN487x_skipPromptLine(dv);
+    return err;
 }

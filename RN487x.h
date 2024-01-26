@@ -1,11 +1,20 @@
 #ifndef RN487x_H
 #define RN487x_H
 
+#include "RN487xH.h"
+
 #define UUID_SIZE (33) // Size = 32 + end string character => 33
 #define SERVICE_CHARACTERISTICS_NUMBER (8)
 #define PRIVATE_SERVICE_NUMBER (8)
 #define PUBLIC_SERVICE_NUMBER (4)
 #define BUFF_TMP_SIZE (1024)
+#define DEV_NAME_SIZE (256)
+
+
+typedef enum {
+	btc_indicate = 0b00100000, btc_notify = 0b00010000, btc_write = 0b00001000,
+	btc_write_without_response = 0b00000100, btc_read = 0b00000010
+}RN487x_CaracteristicsFlag;
 
 typedef enum {
 	device_information = 0x80, uart_transparent = 0x40, beacon = 0x20, reserved = 0x10
@@ -41,19 +50,26 @@ typedef enum{
 typedef enum{
 	P2_2 = 0x01, P2_4 = 0x02, P3_5 = 0x04, P1_2 = 0x08, P1_3 = 0x10
 }RN487x_IOmask;
-
+/*
 typedef enum{
 	RN487x_ok = 0x00, RN487x_hardwareError = 0x01, RN487x_badResponse = 0x02, RN487x_errorResponse = 0x03, RN487x_timeOut = 0x04, RN487x_disable_in_client_mode = 0x05
-}RN487x_Error;
+}RN487x_Error;*/
 
-
+typedef struct{
+	char address[UUID_SIZE];
+	uint8_t addrType;
+	char name[256];
+	int8_t rssi;
+	uint8_t connectable;
+}BleutoothScanDevice;
+void BleutoothScanDevice_clear(BleutoothScanDevice *sd);
 
 typedef struct{
 	char uuid[UUID_SIZE]; //uuid string
 	uint8_t flag;
 	uint16_t handle;
 	uint8_t size;
-	uint8_t *data;
+	//uint8_t *data;
 	uint8_t config;
 }BleutoothCharacteristics;
 void BleutoothCharacteristics_clear(BleutoothCharacteristics *dv);
@@ -67,7 +83,8 @@ void BleutoothSerivce_clear(BleutoothSerivce *dv);
 typedef struct {
 	RN487x_hardwareInterface *hardwareInterface; // define this structure yourself, see RN487xH.c/h.
 	char commandModeCaracter;
-	uint8_t ServerOrClientMode; // 0 = server, 1 = client;
+	uint8_t serverOrClientMode; // 0 = server, 1 = client;
+	uint8_t localOrRemoteMode; // 0 = local, 1 = remote;
 	char buffTmp[BUFF_TMP_SIZE];
 	uint32_t standardTimeOutMs;
 	uint32_t publicServicesCount;
@@ -82,21 +99,20 @@ typedef struct {
 RN487x_Error RN487x_init(RN487x *dv, RN487x_hardwareInterface *hardwareLink);
 RN487x_PinStatus RN487x_getStatus(RN487x *dv);
 
-RN487x_Error RN487x_replyChecker(RN487x *dv,char *reply, char *validReply, char *errorReply);
 
-RN487x_Error RN487x_setSerializedDeviceName(RN487x *dv, char *name);
-RN487x_Error RN487x_setCommandModeCaracter(RN487x *dv, char car);
-RN487x_Error RN487x_setPrePostDelimCarStatuString(RN487x *dv, char *pre, char *post); // max 4 car
+RN487x_Error RN487x_setSerializedDeviceName(RN487x *dv, const char *name);
+//RN487x_Error RN487x_setCommandModeCaracter(RN487x *dv, const char car);
+//RN487x_Error RN487x_setPrePostDelimCarStatuString(RN487x *dv, const char *pre, const char *post);
 RN487x_Error RN487x_setAuthenticationMode(RN487x *dv, RN487x_AuthenticationMode mode);
 
 /// Device information setter ///
 RN487x_Error RN487x_setAppearanceId (RN487x *dv, uint16_t id); // sensor = 0x0540, multisensor = 0x0556
-RN487x_Error RN487x_setFirmwareVersion (RN487x *dv, char *ver);
-RN487x_Error RN487x_setHardwareRevison (RN487x *dv, char *rev);
-RN487x_Error RN487x_setModelName (RN487x *dv, char *name);
-RN487x_Error RN487x_setManufacturerName (RN487x *dv, char *name);
-RN487x_Error RN487x_setSoftwareRevision (RN487x *dv, char *rev);
-RN487x_Error RN487x_setSerialNumber (RN487x *dv, char *sn);
+RN487x_Error RN487x_setFirmwareVersion (RN487x *dv, const char *ver);
+RN487x_Error RN487x_setHardwareRevison (RN487x *dv, const char *rev);
+RN487x_Error RN487x_setModelName (RN487x *dv, const char *name);
+RN487x_Error RN487x_setManufacturerName (RN487x *dv, const char *name);
+RN487x_Error RN487x_setSoftwareRevision (RN487x *dv, const char *rev);
+RN487x_Error RN487x_setSerialNumber (RN487x *dv, const char *sn);
 
 RN487x_Error RN487x_factoryConfiguration(RN487x *dv, uint8_t clearServices);
 
@@ -104,13 +120,16 @@ RN487x_Error RN487x_setOuputPowerAdvertise(RN487x *dv, RN487x_OutputPower power)
 RN487x_Error RN487x_setOuputPowerConnected(RN487x *dv, RN487x_OutputPower power);
 
 RN487x_Error RN487x_setBaudRate(RN487x *dv, uint32_t bd);
-RN487x_Error RN487x_setDeviceName(RN487x *dv, char *name); //  20max
-RN487x_Error RN487x_setLowPowerMode(RN487x *dv, uint8_t powerMode); //  0 = normal mode, 1 = low power
+RN487x_Error RN487x_setDeviceName(RN487x *dv, const char *name); //  20max
+//RN487x_Error RN487x_setLowPowerMode(RN487x *dv, uint8_t powerMode); //  0 = normal mode, 1 = low power
 
-RN487x_Error RN487x_setSecurityPin(RN487x *dv, uint16_t securityPin);
-
+RN487x_Error RN487x_setSecurityPin(RN487x *dv, const char *securityPin);
 RN487x_Error RN487x_setDeviceConfiguration(RN487x *dv, uint16_t configuration);
+RN487x_Error RN487x_setBitDeviceConfiguration(RN487x *dv, RN487x_ConfigMask bitMask);
+RN487x_Error RN487x_resetBitDeviceConfiguration(RN487x *dv, RN487x_ConfigMask bitMask);
 RN487x_Error RN487x_setDefaultService(RN487x *dv, uint8_t services);
+RN487x_Error RN487x_setBitDefaultService(RN487x *dv, RN487x_ServicesMask bitMask);
+RN487x_Error RN487x_resetBitDefaultService(RN487x *dv, RN487x_ServicesMask bitMask);
 RN487x_Error RN487x_setCentralConectionParameters(RN487x *dv, uint16_t minInterval, uint16_t maxInterval, uint16_t latency, uint16_t timeOut);
 RN487x_Error RN487x_setAdvertiseIntervalA(RN487x *dv, uint16_t fastInterval, uint16_t fastTimeOut, uint16_t slowInterval);
 RN487x_Error RN487x_setAdvertiseIntervalB(RN487x *dv, uint16_t beaconInterval);
@@ -121,13 +140,12 @@ RN487x_Error RN487x_setAdvertiseIntervalB(RN487x *dv, uint16_t beaconInterval);
 RN487x_Error RN487x_getConnectionStatus(RN487x *dv, char* status);
 RN487x_Error RN487x_getPeerDevName(RN487x *dv, char* name);
 
-RN487x_Error RN487x_gsetSerializedDeviceName(RN487x *dv, char *name);
-RN487x_Error RN487x_getCommandModeCaracter(RN487x *dv, char *car);
+//RN487x_Error RN487x_getCommandModeCaracter(RN487x *dv, char *car);
 RN487x_Error RN487x_getPrePostDelimCarStatuString(RN487x *dv, char *pre, char *post); // max 4 car
 RN487x_Error RN487x_getAuthenticationMode(RN487x *dv, RN487x_AuthenticationMode *mode);
 
 /// Device information setter ///
-RN487x_Error RN487x_getAppearanceId (RN487x *dv, uint16_t *id); // sensor = 0x0540, multisensor = 0x0556
+RN487x_Error RN487x_getAppearanceId (RN487x *dv, uint32_t *id); // sensor = 0x0540, multisensor = 0x0556
 RN487x_Error RN487x_getFirmwareVersion (RN487x *dv, char *ver);
 RN487x_Error RN487x_getHardwareRevison (RN487x *dv, char *rev);
 RN487x_Error RN487x_getModelName (RN487x *dv, char *name);
@@ -140,9 +158,9 @@ RN487x_Error RN487x_getOuputPowerConnected(RN487x *dv, RN487x_OutputPower *power
 
 RN487x_Error RN487x_getBaudRate(RN487x *dv, uint32_t *bd);
 RN487x_Error RN487x_getDeviceName(RN487x *dv, char *name); //  20max
-RN487x_Error RN487x_getLowPowerMode(RN487x *dv, uint8_t *powerMode); //  0 = normal mode, 1 = low power
+RN487x_Error RN487x_getLowPowerMode(RN487x *dv, uint32_t *powerMode); //  0 = normal mode, 1 = low power
 
-RN487x_Error RN487x_getSecurityPin(RN487x *dv, uint16_t *securityPin);
+RN487x_Error RN487x_getSecurityPin(RN487x *dv, char *securityPin);
 
 RN487x_Error RN487x_getDeviceConfiguration(RN487x *dv, uint16_t *configuration);
 RN487x_Error RN487x_getDefaultService(RN487x *dv, uint8_t *services);
@@ -153,23 +171,22 @@ RN487x_Error RN487x_getAdvertiseIntervalB(RN487x *dv, uint16_t *beaconInterval);
 
 
 /// ------------------------------------------ Action command ------------------------------------------------ ///
-
+uint32_t RN487x_isInCommandMode(RN487x *dv);
 RN487x_Error RN487x_commandMode(RN487x *dv);
 RN487x_Error RN487x_quitCommandMode(RN487x *dv);
 RN487x_Error RN487x_enterRemoteMode(RN487x *dv);
 RN487x_Error RN487x_exitRemoteMode(RN487x *dv);
-RN487x_Error RN487x_writeIO(RN487x *dv, RN487x_IOmask mask, uint8_t value);
+RN487x_Error RN487x_writeIO(RN487x *dv, char mask, uint8_t value);
 RN487x_Error RN487x_startAdvertise(RN487x *dv, uint16_t fastInterval, uint8_t slowInterval);
 RN487x_Error RN487x_bondDevice(RN487x *dv);
 RN487x_Error RN487x_connectLastBondedDevice(RN487x *dv);
 RN487x_Error RN487x_connectBondedDevice(RN487x *dv, uint8_t bondId);
-RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress); // public = 0, private = 1
+RN487x_Error RN487x_connectByAdress(RN487x *dv, uint8_t publicOrPrivate, const char *adress); // public = 0, private = 1
 RN487x_Error RN487x_startUartTransparentMode(RN487x *dv); // public = 0, private = 1
-RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv); // public = 0, private = 1
-RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t flag, uint8_t *data, uint32_t size); // public = 0, private = 1
-RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, uint64_t adress);
+RN487x_Error RN487x_clearAdvertiseContent(RN487x *dv, uint8_t permanent, char charSource);
+RN487x_Error RN487x_appendAdvertiseContent(RN487x *dv, uint8_t adType, uint8_t *data, uint32_t size, uint8_t permanent, char charSource);
+RN487x_Error RN487x_whiteListMACadress(RN487x *dv, uint8_t publicOrPrivate, const char *adress);
 RN487x_Error RN487x_whiteListBondedDevice(RN487x *dv);
-RN487x_Error RN487x_clearWhiteListBondedDevice(RN487x *dv);
 RN487x_Error RN487x_readWhiteList(RN487x *dv, char *data);
 RN487x_Error RN487x_disconnect(RN487x *dv);
 RN487x_Error RN487x_getSignalStreng(RN487x *dv, float *streng);
@@ -186,9 +203,17 @@ RN487x_Error RN487x_startClientOperation(RN487x *dv);
 /// ------------------------------------------ Services command ------------------------------------------------- ///
 
 RN487x_Error RN487x_createServerServices(RN487x *dv, BleutoothSerivce *service);
-RN487x_Error RN487x_writeCaracteristic(BleutoothCharacteristics *caracteristic);
-RN487x_Error RN487x_readCaracteristic(BleutoothCharacteristics *caracteristic);
+RN487x_Error RN487x_writeCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t dataLen);
+RN487x_Error RN487x_readCaracteristic(RN487x *dv, BleutoothCharacteristics *caracteristic, uint8_t *data, uint8_t readLen);
 
+BleutoothSerivce *RN487x_getServicesStructureByUuid(RN487x *dv, const char *uuidSearch);
+BleutoothCharacteristics *RN487x_getCharacteristcsStructureByUuid(BleutoothSerivce *sv, const char *uuidSearch, uint8_t flag);
+
+
+/// Scannig
+RN487x_Error RN487x_startScan(RN487x *dv);
+RN487x_Error RN487x_scanGetNextEntry(RN487x *dv, BleutoothScanDevice *sdv, char *uuidsBuff, char *broadcastPayload, uint32_t timeOutMs);
+RN487x_Error RN487x_stopScan(RN487x *dv);
 
 
 #endif
